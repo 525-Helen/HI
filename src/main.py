@@ -5,13 +5,14 @@ import threading
 import traceback
 import logging
 import uuid
+import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Iterable, AsyncIterable, AsyncGenerator, Optional
 import cozeloop
 import uvicorn
 import time
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
@@ -602,6 +603,30 @@ async def health_check():
 @app.get(path="/graph_parameter")
 async def http_graph_inout_parameter(request: Request):
     return service.graph_inout_schema()
+
+
+_UI_HTML = None
+
+
+def _load_ui_html() -> str:
+    """读取前端页面内容（进程内缓存，避免每次请求读盘）。"""
+    global _UI_HTML
+    if _UI_HTML is None:
+        workspace = os.getenv("COZE_WORKSPACE_PATH", "/workspace/projects")
+        ui_path = os.path.join(workspace, "assets", "frontend", "index.html")
+        try:
+            with open(ui_path, "r", encoding="utf-8") as f:
+                _UI_HTML = f.read()
+        except FileNotFoundError:
+            _UI_HTML = "<h2>前端页面缺失</h2>"
+    return _UI_HTML
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/ui", include_in_schema=False)
+async def serve_ui():
+    """提供「三餐卡路里管家」的网页聊天界面。"""
+    return HTMLResponse(content=_load_ui_html())
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Start FastAPI server")

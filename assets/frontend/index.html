@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🍱 三餐卡路里管家</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <style>
+    :root {
+      --bg1: #fff8ef;
+      --bg2: #fdf3e3;
+      --primary: #ff8c42;
+      --primary-dark: #f26b1d;
+      --green: #6fb95e;
+      --green-dark: #4f9a44;
+      --card: #ffffff;
+      --text: #2d2a26;
+      --muted: #9b8f80;
+      --border: #f0e5d3;
+      --bubble-user: linear-gradient(135deg, #ff9a5c, #ff7a3d);
+      --shadow: 0 8px 24px rgba(242, 107, 29, 0.10);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(160deg, var(--bg1), var(--bg2));
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .app {
+      width: 100%;
+      max-width: 860px;
+      height: 90vh;
+      background: var(--card);
+      border-radius: 24px;
+      box-shadow: 0 24px 64px rgba(120, 80, 40, 0.18);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    header {
+      padding: 18px 24px;
+      background: linear-gradient(135deg, #fff3e6, #ffe8cf);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header .logo {
+      width: 46px; height: 46px; border-radius: 14px;
+      background: linear-gradient(135deg, #ffb26b, #ff8c42);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; box-shadow: 0 6px 14px rgba(242,107,29,.3);
+    }
+    header h1 { font-size: 19px; font-weight: 800; letter-spacing: .5px; }
+    header p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .chips {
+      display: flex; gap: 8px; padding: 10px 16px 2px;
+      overflow-x: auto; background: var(--card);
+    }
+    .chips button {
+      border: 1px solid var(--border); background: #fff;
+      color: var(--primary-dark); font-size: 12.5px; font-weight: 600;
+      padding: 6px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+      transition: all .18s;
+    }
+    .chips button:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    main {
+      flex: 1; overflow-y: auto; padding: 18px 20px;
+      display: flex; flex-direction: column; gap: 16px;
+      background: linear-gradient(180deg, #fffdf9, var(--bg1));
+    }
+    .msg { display: flex; gap: 10px; max-width: 100%; }
+    .msg.user { flex-direction: row-reverse; }
+    .avatar {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    .msg.user .avatar { background: var(--bubble-user); color: #fff; }
+    .msg.bot .avatar { background: linear-gradient(135deg, #7cc56b, #4f9a44); color: #fff; }
+    .bubble {
+      max-width: 78%; padding: 12px 16px; border-radius: 18px;
+      font-size: 14.5px; line-height: 1.65; word-break: break-word;
+    }
+    .msg.user .bubble {
+      background: var(--bubble-user); color: #fff;
+      border-bottom-right-radius: 6px;
+      box-shadow: 0 6px 16px rgba(242,107,29,.25);
+    }
+    .msg.bot .bubble {
+      background: #fff; border: 1px solid var(--border);
+      border-bottom-left-radius: 6px; box-shadow: var(--shadow);
+    }
+    .bubble p { margin: 6px 0; }
+    .bubble h1, .bubble h2, .bubble h3 { margin: 10px 0 6px; color: var(--primary-dark); }
+    .bubble h3 { font-size: 15.5px; }
+    .bubble ul, .bubble ol { padding-left: 20px; margin: 6px 0; }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13.5px; }
+    .bubble th, .bubble td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+    .bubble th { background: #fff4e8; color: var(--primary-dark); }
+    .bubble code { background: #f6f1e8; border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+    .bubble pre { background: #2d2a26; color: #f0e9de; padding: 12px; border-radius: 10px; overflow-x: auto; }
+    .bubble blockquote { border-left: 3px solid var(--primary); padding-left: 10px; color: var(--muted); margin: 6px 0; }
+    .bubble hr { border: none; border-top: 1px dashed var(--border); margin: 12px 0; }
+    .bubble strong { color: var(--primary-dark); }
+    .typing .bubble::after {
+      content: "…"; animation: blink 1s infinite;
+    }
+    @keyframes blink { 50% { opacity: .2; } }
+    .dote { display:inline-block; width:6px;height:6px;margin-right:3px;border-radius:50%;background:#aaa;animation:dot 1.2s infinite; }
+    .dote:nth-child(2){animation-delay:.2s}.dote:nth-child(3){animation-delay:.4s}
+    @keyframes dot {0%,80%,100%{opacity:.2;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+    footer {
+      padding: 14px 16px; background: var(--card); border-top: 1px solid var(--border);
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    textarea {
+      flex: 1; resize: none; border: 1.5px solid var(--border); border-radius: 14px;
+      padding: 12px 14px; font-size: 14.5px; line-height: 1.5; outline: none;
+      font-family: inherit; background: #fff; max-height: 120px; color: var(--text);
+      transition: border-color .2s;
+    }
+    textarea:focus { border-color: var(--primary); }
+    .send {
+      border: none; border-radius: 14px; background: var(--bubble-user); color: #fff;
+      padding: 12px 20px; font-size: 15px; font-weight: 700; cursor: pointer;
+      box-shadow: 0 6px 16px rgba(242,107,29,.3); transition: transform .12s, filter .2s;
+    }
+    .send:hover { filter: brightness(1.05); }
+    .send:active { transform: translateY(1px); }
+    .send:disabled { opacity: .6; cursor: not-allowed; }
+    .placeholder {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: var(--muted); gap: 14px; padding-bottom: 40px;
+    }
+    .placeholder .big { font-size: 60px; animation: float 3s infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)} }
+    .placeholder p { font-size: 14px; text-align:center; max-width: 440px; line-height: 1.7; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-thumb { background: #e6d8c2; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #d9c7ad; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">🍱</div>
+      <div>
+        <h1>三餐卡路里管家</h1>
+        <p>记录每餐热量 · 定制饮食计划 · 每日贴心建议</p>
+      </div>
+    </header>
+
+    <div class="chips" id="chips">
+      <button data-txt="我想制定一份饮食计划，帮我引导填写身高体重和减脂目标">🎯 制定饮食计划</button>
+      <button data-txt="帮我记录今天的早餐：一杯豆浆和一个鸡蛋">🍳 记录早餐</button>
+      <button data-txt="汇总我今天的卡路里摄入情况，并给我一些饮食建议">📊 今日汇总</button>
+      <button data-txt="查看我的个人资料和已保存的饮食计划">📋 我的资料</button>
+    </div>
+
+    <main id="main">
+      <div class="placeholder" id="placeholder">
+        <div class="big">🥗</div>
+        <p>你好呀，我是你的三餐卡路里管家！<br>
+        告诉我你今天吃了什么，我会帮你估算热量、记录三餐；<br>
+        也可以先告诉我你的身高体重和目标，为你定制专属饮食计划～</p>
+      </div>
+    </main>
+
+    <footer>
+      <textarea id="input" rows="1" placeholder="输入你今天吃了什么，或你的身体数据…" maxlength="2000"></textarea>
+      <button class="send" id="send">发送</button>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const main = $('main'), input = $('input'), sendBtn = $('send');
+    let thinking = false;
+
+    // 会话 ID：稳定才能跨轮次保留对话记忆（thread_id = x-run-id）
+    const sessionId = (() => {
+      let sid = sessionStorage.getItem('kcal_session');
+      if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem('kcal_session', sid); }
+      return sid;
+    })();
+
+    marked.setOptions({ breaks: true, gfm: true });
+
+    function addMessage(role, markdown) {
+      $('placeholder') && $('placeholder').remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + role;
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      avatar.textContent = role === 'user' ? '😊' : '🥗';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.innerHTML = marked.parse(markdown);
+      wrap.appendChild(avatar);
+      wrap.appendChild(bubble);
+      main.appendChild(wrap);
+      main.scrollTop = main.scrollHeight;
+      return bubble;
+    }
+
+    function showTyping() {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg bot typing'; wrap.id = 'typing';
+      const avatar = document.createElement('div'); avatar.className='avatar'; avatar.textContent='🥗';
+      const bubble = document.createElement('div'); bubble.className='bubble';
+      bubble.innerHTML = '<span class="dote"></span><span class="dote"></span><span class="dote"></span>';
+      wrap.appendChild(avatar); wrap.appendChild(bubble);
+      main.appendChild(wrap); main.scrollTop = main.scrollHeight;
+    }
+    function removeTyping(){ $('typing') && $('typing').remove(); }
+
+    function extractReply(res) {
+      const msgs = (res && res.messages) || [];
+      const texts = [];
+      for (const m of msgs) {
+        if (!m || typeof m !== 'object') continue;
+        const t = String(m.type || '');
+        if (t.indexOf('ai') === -1 && t.indexOf('AIMessage') === -1) continue;
+        const c = m.content;
+        if (typeof c === 'string') { if (c.trim()) texts.push(c); }
+        else if (Array.isArray(c)) { texts.push(c.filter(p => p && p.text).map(p => p.text).join('')); }
+      }
+      if (texts.length) return texts.join('\n\n');
+      if (res && res.error_message) return '😅 出错了：' + res.error_message;
+      return '😅 暂时没有收到回复，请稍后再试。';
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text || thinking) return;
+      addMessage('user', text);
+      input.value = '';
+      autoResize();
+      showTyping();
+      thinking = true; sendBtn.disabled = true;
+
+      const payload = { messages: [{ role: 'user', content: text }] };
+      let final = '';
+      try {
+        const resp = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-run-id': sessionId },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        final = extractReply(data);
+      } catch (e) {
+        final = '😅 网络或服务异常：' + e.message;
+      }
+      removeTyping();
+      addMessage('bot', final);
+      thinking = false; sendBtn.disabled = false;
+      main.scrollTop = main.scrollHeight;
+    }
+
+    function autoResize() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px'; }
+
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+    input.addEventListener('input', autoResize);
+    $('chips').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-txt]');
+      if (btn) { input.value = btn.getAttribute('data-txt'); autoResize(); send(); }
+    });
+    input.focus();
+  </script>
+</body>
+</html>
