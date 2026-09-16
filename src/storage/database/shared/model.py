@@ -3,7 +3,7 @@ from coze_coding_dev_sdk.database import Base
 from typing import Optional
 import datetime
 
-from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, Double, Index, Integer, JSON, Numeric, PrimaryKeyConstraint, String, Table, Text, func, text
+from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, Double, Float, Index, Integer, JSON, Numeric, PrimaryKeyConstraint, String, Table, Text, func, text
 from sqlalchemy.dialects.postgresql import OID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +32,26 @@ class MealRecord(Base):
     calories: Mapped[int] = mapped_column(Integer, nullable=False, comment='总卡路里(kcal)')
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment='备注')
     created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True), server_default=text('now()'))
+
+
+class UserProfile(Base):
+    __tablename__ = 'user_profiles'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='user_profiles_pkey'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, comment='用户标识(单用户场景固定为 default)')
+    height_cm: Mapped[int] = mapped_column(Integer, nullable=False, comment='身高(cm)')
+    weight_kg: Mapped[float] = mapped_column(Float, nullable=False, comment='体重(kg)')
+    age: Mapped[int] = mapped_column(Integer, nullable=False, comment='年龄')
+    gender: Mapped[str] = mapped_column(String(10), nullable=False, comment='性别: male/female')
+    activity_level: Mapped[str] = mapped_column(String(20), nullable=False, comment='活动水平: sedentary/light/moderate/active')
+    goal: Mapped[str] = mapped_column(String(20), nullable=False, comment='目标: lose_fat/fitness/normal')
+    daily_calorie_target: Mapped[int] = mapped_column(Integer, nullable=False, comment='每日热量目标(kcal)')
+    diet_plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment='饮食计划')
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True), server_default=text('now()'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True), server_default=text('now()'))
 
 
 t_pg_stat_statements = Table(

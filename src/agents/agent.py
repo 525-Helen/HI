@@ -16,6 +16,7 @@ from coze_coding_utils.runtime_ctx.context import default_headers
 
 from storage.memory.memory_saver import get_memory_saver
 from tools.meal_tools import save_meal_record, get_daily_intake
+from tools.profile_tools import save_user_profile, get_user_profile, save_diet_plan
 
 LLM_CONFIG = "config/agent_llm_config.json"
 
@@ -57,7 +58,13 @@ def build_agent(ctx=None):
         default_headers=default_headers(ctx) if ctx else {},
     )
 
-    tools = [save_meal_record, get_daily_intake]
+    tools = [
+        save_meal_record,
+        get_daily_intake,
+        save_user_profile,
+        get_user_profile,
+        save_diet_plan,
+    ]
 
     return create_agent(
         model=llm,
