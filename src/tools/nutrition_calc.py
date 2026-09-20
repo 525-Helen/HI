@@ -82,6 +82,18 @@ FALLBACK = {"热量_kcal": 100.0, "蛋白_g": 5.0, "碳水_g": 15.0, "脂肪_g":
 # 注意：若用户已给出生活化描述(portion_desc)或状态(portion_state)，则走 PORTION_MAP/默认兜底，不再硬拦截。
 VAGUE_UNIT_KEYWORDS = ["碗", "盘", "块", "份", "勺", "捧", "碟", "盆", "杯"]
 
+# 笼统量词（单独出现不代表"具体生活化参照"）：用户只说"一碗/一盘/一块/一份"时，不能据此映射克数，
+# 必须进入"优先问克数"的澄清流程。仅当 portion_desc 中出现下面的"具体参照词"时才允许映射。
+GENERIC_UNIT_KEYWORDS = ["碗", "盘", "块", "份", "勺", "杯", "碟", "盆", "捧"]
+
+# 具体生活化参照词：命中任一即视为用户给出了可估算的份量描述（如"普通碗·八分满""一个掌心""满满一大碗"）。
+# 注意："普通碗/大碗/小碗/满碗/半碗/掌心/拳头/拇指/几成/满"等与"大小/满度/体积"有关才算具体参照。
+SPECIFIC_REF_KEYWORDS = [
+    "普通碗", "中碗", "大碗", "小碗", "满碗", "半碗", "七分", "八分", "九分", "五分", "几成",
+    "掌心", "拳头", "一拳", "两拳", "一掌心", "拇指", "满满",
+    "小份", "大份", "一份装满", "一碗满", "一盘满",
+]
+
 # 活动水平系数（TDEE = BMR * factor）
 ACTIVITY_FACTORS = {
     "sedentary": 1.2,
@@ -162,6 +174,17 @@ def match_portion_grams(desc: str, category: str) -> float:
     return best_val
 
 
+def has_specific_portion_ref(desc: str) -> bool:
+    """判断生活化描述中是否出现'具体参照'（碗大小/满度/掌心/拳头等）。
+    仅出现笼统量词（一碗/一盘/一块/一份）时不视为可映射的具体参照。"""
+    if not desc:
+        return False
+    for kw in SPECIFIC_REF_KEYWORDS:
+        if kw in desc:
+            return True
+    return False
+
+
 def parse_foods(foods_json):
     if isinstance(foods_json, str):
         data = json.loads(foods_json)
@@ -204,6 +227,20 @@ def compute(foods, profile):
         portion_state = f.get("portion_state", "")
         category = classify_food(name)
 
+        # ============ 硬拦截（最高优先）：portion_desc 只是笼统量词（一碗/一盘/一块/一份）============
+        # 无论 portion_state 填什么，都不允许依据笼统量词映射或兜底，必须追问克数。
+        # 这防止模型在首轮就把"一碗"当作可映射/兜底输入而跳过"先问克数"。
+        if portion_desc and not has_specific_portion_ref(portion_desc):
+            needs_clarification = True
+            if clarification_type in ("none",):
+                clarification_type = "grams"
+            items.append({
+                "food": name, "matched_key": name, "grams": 0.0,
+                "calories": 0.0, "protein": 0.0, "carb": 0.0, "fat": 0.0,
+                "confidence": conf, "_needs_clarification": True,
+            })
+            continue
+
         # ============ L2：用户说"不知道/不清楚/没称过" -> 引导进参照物估算 ============
         if portion_state == "unknown":
             needs_clarification = True
@@ -232,6 +269,18 @@ def compute(foods, profile):
             # 明确克数，保持原 confidence，直接计算
             pass
         elif portion_desc:
+            # 仅当描述中出现"具体参照"（普通碗·八分满/掌心/拳头等）才允许映射；
+            # 若只是笼统量词（一碗/一盘/一块/一份），必须追问克数，不得映射。
+            if not has_specific_portion_ref(portion_desc):
+                needs_clarification = True
+                if clarification_type == "none":
+                    clarification_type = "grams"
+                items.append({
+                    "food": name, "matched_key": name, "grams": 0.0,
+                    "calories": 0.0, "protein": 0.0, "carb": 0.0, "fat": 0.0,
+                    "confidence": conf, "_needs_clarification": True,
+                })
+                continue
             mapped = match_portion_grams(portion_desc, category)
             if mapped > 0:
                 grams = mapped
