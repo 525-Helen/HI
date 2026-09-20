@@ -71,6 +71,9 @@ ALLERGEN_KEYWORDS = {
 # 库缺失时的通用回退估算（每 100g）
 FALLBACK = {"热量_kcal": 100.0, "蛋白_g": 5.0, "碳水_g": 15.0, "脂肪_g": 3.0}
 
+# 模糊家用单位：命中即视为"份量不明确"，强制澄清、不估算克数
+VAGUE_UNIT_KEYWORDS = ["碗", "盘", "块", "份", "勺", "捧", "碟", "盆", "杯"]
+
 # 活动水平系数（TDEE = BMR * factor）
 ACTIVITY_FACTORS = {
     "sedentary": 1.2,
@@ -102,10 +105,15 @@ def parse_foods(foods_json):
         if not isinstance(item, dict):
             raise ValueError("foods 每个元素必须是对象")
         gram_val = item.get("grams", 0)
+        grams = float(gram_val) if gram_val is not None else 0.0
+        name = str(item.get("food", "")).strip()
+        # 模糊单位（碗/盘/块/份/杯等）或未提供明确克数 => 份量不明，禁止估算克数
+        vague = any(k in name for k in VAGUE_UNIT_KEYWORDS) or grams <= 0
         out.append({
-            "food": str(item.get("food", "")).strip(),
-            "grams": float(gram_val) if gram_val is not None else 0.0,
+            "food": name,
+            "grams": 0.0 if vague else grams,
             "confidence": float(item["confidence"]) if item.get("confidence") is not None else 1.0,
+            "vague": vague,
         })
     return out
 
@@ -120,8 +128,9 @@ def compute(foods, profile):
         name = f["food"]
         grams = f["grams"]
         conf = f["confidence"]
+        vague = f.get("vague", False)
 
-        if grams <= 0:
+        if vague:
             needs_clarification = True
 
         if conf < 0.8:
@@ -150,6 +159,20 @@ def compute(foods, profile):
                 "message": f"营养库未收录「{name}」，已按通用估算值计算，建议人工核对",
             })
 
+        # 份量不明：该条不计入热量（克数置 0，禁止瞎猜）
+        if vague:
+            items.append({
+                "food": name,
+                "matched_key": food_key or name,
+                "grams": 0.0,
+                "calories": 0.0,
+                "protein": 0.0,
+                "carb": 0.0,
+                "fat": 0.0,
+                "_needs_clarification": True,
+            })
+            continue
+
         factor = grams / 100.0 if grams > 0 else 0.0
         item = {
             "food": name,
@@ -164,18 +187,26 @@ def compute(foods, profile):
         for k in totals:
             totals[k] += per100[k] * factor
 
-        # 过敏原子串匹配（榴莲千层常含蛋/乳/麸质，同样触发）
+        # 过敏原子串匹配：优先保障过敏安全，触发即标记 high（去重）
         for kw, group in ALLERGEN_KEYWORDS.items():
             if kw in name:
-                risk_flags.append({
-                    "type": "allergen_alert", "level": "high",
-                    "message": f"「{name}」可能含有{group}，若用户对其过敏请避免食用",
-                })
+                if not any(r.get("type") == "allergen_alert" and group in r.get("message", "") for r in risk_flags):
+                    risk_flags.append({
+                        "type": "allergen_alert", "level": "high",
+                        "message": f"「{name}」可能含有{group}，若用户对其过敏请避免食用",
+                    })
 
     calories = _round(totals["热量_kcal"])
     protein = _round(totals["蛋白_g"])
     carb = _round(totals["碳水_g"])
     fat = _round(totals["脂肪_g"])
+
+    # 需要澄清时：热量/宏量一律归零，禁止输出任何估算数字
+    if needs_clarification:
+        calories = 0.0
+        protein = 0.0
+        carb = 0.0
+        fat = 0.0
 
     # Mifflin-St Jeor 计算 BMR 与目标热量
     weight = float(profile["weight_kg"])
@@ -194,7 +225,7 @@ def compute(foods, profile):
     remaining_calories = _round(target_calories - calories)
     pct_consumed = _round(calories / target_calories * 100) if target_calories > 0 else 0.0
 
-    if calories < 200:
+    if not needs_clarification and calories < 200:
         risk_flags.append({
             "type": "low_calorie_reminder", "level": "warning",
             "message": "本餐热量估算值过低，请向用户确认份量信息是否完整",
