@@ -13,6 +13,8 @@
     "get_daily_intake: 查询指定日期的用餐记录与总热量",
     "save_user_profile: 保存/更新用户身体数据与目标并计算每日热量目标",
     "get_user_profile: 获取用户资料、热量目标与已存档饮食计划",
-    "save_diet_plan: 保存个性化饮食计划"
+    "save_diet_plan: 保存个性化饮食计划",
+    "knowledge_search: 检索营养知识库，回答饮食建议、膳食指南、营养知识问题",
+    "diet_nutrition_agent: 调用饮食营养计算工作流，确定性计算一餐/累计的热量与宏量营养"
   ]
 }
