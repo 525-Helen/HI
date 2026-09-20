@@ -79,33 +79,38 @@ def knowledge_search(query: str, top_k: int = 5) -> str:
 
 
 @tool
-def diet_nutrition_agent(foods: str) -> str:
-    """对一餐饮食做确定性的热量与宏量营养计算。
+def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optional[int] = None) -> str:
+    """对饮食做确定性的热量与宏量营养计算，可算"某一餐"或"当日累计剩余"。
 
-    当用户记录"吃了什么"（记录用餐/询问这餐热量营养时）调用本工具。
-    参数：
-    - foods：结构化食物明细 JSON 字符串，形如
-      '[{"food":"米饭","grams":200,"confidence":0.95},{"food":"鸡胸肉","grams":150,"confidence":0.9}]'
-      其中 grams 为该食物估算克数，confidence 为识别置信度(0~1，默认1)。请把"1个鸡蛋"等折算为约 50g。
-    函数会读取用户已保存的身体档案（身高/体重/年龄/性别/活动水平/目标）作为计算口径；
-    若未保存档案则使用默认值（30岁/男/170cm/65kg/light/maintain）。
-    返回：JSON 字符串，含本餐热量(calories)、宏量(protein/carb/fat)、目标(target_*)、
-    剩余热量(remaining_calories)、完成度(pct_consumed)、安全预警(risk_flags)与逐项明细(items)。
+    适用于两类场景：
+    A. 用户记录/询问"某餐吃了什么" → 传入 foods（结构化食物明细 JSON 字符串）：
+       '[{"food":"米饭","grams":200,"confidence":0.95},{"food":"鸡胸肉","grams":150,"confidence":0.9}]'
+       其中 grams 为该食物估算克数，confidence 为识别置信度(0~1，默认1)。请把"1个鸡蛋"等折算为约 50g。
+    B. 用户给出"今日已累计摄入热量"（如"我今天吃了1500大卡，晚餐怎么补"）→ 只传 consumed_calories，
+       函数会结合用户档案返回每日目标和剩余缺口 remaining_calories。
+
+    函数会读取用户已保存档案（身高/体重/年龄/性别/活动水平/目标）作为计算口径；未保存则用默认值（30岁/男/170cm/65kg/light/maintain）。
+    返回：JSON 字符串，含热量(calories)、宏量(protein/carb/fat)、目标(target_*)、剩余热量(remaining_calories)、
+    完成度(pct_consumed)、安全预警(risk_flags)与逐项明细(items)。
+    场景 A 时 calories 为本餐热量；场景 B 时 calories 为已累计热量、remaining_calories = target_calories - consumed_calories。
     """
     _get_ctx()
     client = get_supabase_client()
 
     profile = _read_profile(client)
 
-    # 解析 foods
-    try:
-        items = json.loads(foods)
-        if not isinstance(items, list):
-            return json.dumps({"status": "error", "message": "foods 参数必须是 JSON 数组"}, ensure_ascii=False)
-        for it in items:
-            it.setdefault("confidence", 1.0)
-    except Exception as e:  # noqa: BLE001
-        return json.dumps({"status": "error", "message": f"foods 参数解析失败: {e}"}, ensure_ascii=False)
+    # 解析 foods（可空）：场景 B 时 foods 为空列表
+    items: list = []
+    if foods:
+        try:
+            parsed = json.loads(foods)
+            if not isinstance(parsed, list):
+                return json.dumps({"status": "error", "message": "foods 参数必须是 JSON 数组"}, ensure_ascii=False)
+            items = parsed
+            for it in items:
+                it.setdefault("confidence", 1.0)
+        except Exception as e:  # noqa: BLE001
+            return json.dumps({"status": "error", "message": f"foods 参数解析失败: {e}"}, ensure_ascii=False)
 
     script = os.path.join(os.getenv("COZE_WORKSPACE_PATH", "/workspace/projects"), "src/tools/nutrition_calc.py")
     cmd = [
@@ -123,10 +128,21 @@ def diet_nutrition_agent(foods: str) -> str:
         out = result.stdout.strip()
         if not out:
             return json.dumps({"status": "error", "message": f"营养计算无输出: {result.stderr[:500]}"}, ensure_ascii=False)
-        # 兼容脚本可能多行输出：取最后一个 JSON 行
         trial = out
         if result.returncode != 0 and not trial.startswith("{"):
             return json.dumps({"status": "error", "message": trial[:500]}, ensure_ascii=False)
+        # 场景 B：仅给累计热量时，重算剩余缺口
+        if consumed_calories is not None and not items:
+            try:
+                data = json.loads(trial)
+                target = float(data.get("target_calories") or data.get("target") or 0)
+                consumed = float(consumed_calories)
+                data["calories"] = consumed
+                data["remaining_calories"] = round(target - consumed, 1)
+                data["pct_consumed"] = round(consumed / target * 100, 1) if target else 0
+                return json.dumps(data, ensure_ascii=False)[:4000]
+            except Exception:  # noqa: BLE001
+                return trial[:4000]
         return trial[:4000]
     except Exception as e:  # noqa: BLE001
         return json.dumps({"status": "error", "message": f"营养计算执行失败: {e}"}, ensure_ascii=False)
