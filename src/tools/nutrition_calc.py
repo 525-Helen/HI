@@ -185,6 +185,45 @@ def has_specific_portion_ref(desc: str) -> bool:
     return False
 
 
+# 用户申报的过敏原 -> 过敏原分组（用于把用户登记的过敏原归一化到 ALLERGEN_KEYWORDS 的分组）
+USER_ALLERGEN_RULES = [
+    ("乳制品", ["牛奶", "奶", "乳", "奶油", "奶酪", "黄油"]),
+    ("蛋类", ["鸡蛋", "蛋"]),
+    ("花生", ["花生"]),
+    ("大豆", ["大豆", "黄豆", "豆浆", "豆腐", "毛豆", "豆"]),
+    ("鱼类", ["鱼"]),
+    ("甲壳类", ["虾", "蟹", "龙虾", "壳"]),
+    ("麸质", ["小麦", "麦", "面", "面包", "麸质"]),
+]
+
+
+def resolve_user_allergen_groups(declared) -> set:
+    """将用户登记的过敏原（如 ["虾","海鲜","牛奶"]）归一化为过敏原分组集合。"""
+    groups = set()
+    for item in declared or []:
+        s = str(item).strip()
+        if not s:
+            continue
+        if "海鲜" in s or "海味" in s:
+            groups.add("鱼类")
+            groups.add("甲壳类")
+        for group, kws in USER_ALLERGEN_RULES:
+            for kw in kws:
+                if kw in s or s in kw:
+                    groups.add(group)
+                    break
+    return groups
+
+
+def food_allergen_groups(name: str) -> set:
+    """根据食物名判断该食物可能含有的过敏原分组。"""
+    groups = set()
+    for kw, group in ALLERGEN_KEYWORDS.items():
+        if kw in name:
+            groups.add(group)
+    return groups
+
+
 def parse_foods(foods_json):
     if isinstance(foods_json, str):
         data = json.loads(foods_json)
@@ -227,12 +266,16 @@ def compute(foods, profile):
         portion_state = f.get("portion_state", "")
         category = classify_food(name)
 
-        # ============ 硬拦截（最高优先）：portion_desc 只是笼统量词（一碗/一盘/一块/一份）============
-        # 无论 portion_state 填什么，都不允许依据笼统量词映射或兜底，必须追问克数。
-        # 这防止模型在首轮就把"一碗"当作可映射/兜底输入而跳过"先问克数"。
-        if portion_desc and not has_specific_portion_ref(portion_desc):
+        # ============ 硬拦截 S0（最高优先，模糊量词强约束 / P0-2）============
+        # 只要"食物名带模糊单位(碗/盘/块/份/勺/碟/盆/杯等)"或"生活化描述只是笼统量词(一碗/一盘/一块/一份)"，
+        # 且未给出明确克数、也未给出可映射的具体参照（普通碗·八分满/掌心/拳头），则：
+        #   - 无论 portion_state 是 unknown 还是 unknown_still，一律强制 needs_clarification=true(grams)
+        #   - grams=0、热量/宏量置零（compute 末尾统一归零）
+        # 这杜绝模型在首轮把"一碗"当作可映射/兜底输入、或借 unknown_still 绕开"先问克数"。
+        vague_in_name = any(k in name for k in VAGUE_UNIT_KEYWORDS)
+        if grams <= 0 and not has_specific_portion_ref(portion_desc) and (vague_in_name or portion_desc):
             needs_clarification = True
-            if clarification_type in ("none",):
+            if clarification_type == "none":
                 clarification_type = "grams"
             items.append({
                 "food": name, "matched_key": name, "grams": 0.0,
@@ -357,14 +400,33 @@ def compute(foods, profile):
         for k in totals:
             totals[k] += per100[k] * factor
 
-        # 过敏原子串匹配：优先保障过敏安全，触发即标记 high（去重）
-        for kw, group in ALLERGEN_KEYWORDS.items():
-            if kw in name:
-                if not any(r.get("type") == "allergen_alert" and group in r.get("message", "") for r in risk_flags):
-                    risk_flags.append({
-                        "type": "allergen_alert", "level": "high",
-                        "message": f"「{name}」可能含有{group}，若用户对其过敏请避免食用",
-                    })
+        # 过敏校验（改用 user_preference 中的已登记过敏原，不再依赖当前对话上下文）
+        # 当食物含有的过敏原分组命中用户登记的分组时，触发 high 级拦截；未登记时仅给 info 提示。
+        user_allergen_groups = resolve_user_allergen_groups(profile.get("allergens") or [])
+        food_groups = food_allergen_groups(name)
+        if user_allergen_groups and (user_allergen_groups & food_groups):
+            hit = user_allergen_groups & food_groups
+            if not any(r.get("type") == "allergen_alert" for r in risk_flags):
+                risk_flags.append({
+                    "type": "allergen_alert", "level": "high",
+                    "message": f"「{name}」含有{('、'.join(sorted(hit)))}，与你登记在案的过敏原冲突，请避免食用；如已食用出现不适请及时就医",
+                })
+        elif food_groups:
+            if not any(r.get("type") == "allergen_info" for r in risk_flags):
+                risk_flags.append({
+                    "type": "allergen_info", "level": "info",
+                    "message": f"「{name}」可能含有{('、'.join(sorted(food_groups)))}，若你对其过敏请在建档时登记以便拦截",
+                })
+
+        # 忌口校验：命中 user_preference 的 dislikes 时提醒
+        for d in (profile.get("dislikes") or []):
+            ds = str(d).strip()
+            if ds and ds in name:
+                risk_flags.append({
+                    "type": "dislike_reminder", "level": "warning",
+                    "message": f"「{name}」是你的忌口「{ds}」，建议更换为其他食物",
+                })
+                break
 
     calories = _round(totals["热量_kcal"])
     protein = _round(totals["蛋白_g"])
@@ -432,10 +494,14 @@ def main():
     parser.add_argument("--activity", default="light",
                         choices=["sedentary", "light", "moderate", "active", "very_active"], help="活动水平")
     parser.add_argument("--goal", default="maintain", choices=["lose", "maintain", "gain"], help="目标")
+    parser.add_argument("--allergens", default="[]", help="用户登记的过敏原 JSON 数组字符串")
+    parser.add_argument("--dislikes", default="[]", help="用户登记的忌口 JSON 数组字符串")
     args = parser.parse_args()
 
     try:
         foods = parse_foods(args.foods)
+        allergens = json.loads(args.allergens) if args.allergens else []
+        dislikes = json.loads(args.dislikes) if args.dislikes else []
         profile = {
             "age": args.age,
             "gender": args.gender,
@@ -443,6 +509,8 @@ def main():
             "weight_kg": args.weight,
             "activity_level": args.activity,
             "goal_type": args.goal,
+            "allergens": allergens,
+            "dislikes": dislikes,
         }
         result = compute(foods, profile)
         print(json.dumps(result, ensure_ascii=False))

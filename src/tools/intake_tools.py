@@ -19,6 +19,7 @@ from coze_coding_utils.runtime_ctx.context import new_context
 
 PROFILE_KEY = "default"
 PROFILE_TABLE = "user_profiles"
+PREF_TABLE = "user_preference"
 KB_DATASET = "nutrition_kb"
 
 # 用户档案 goal 值 -> 营养计算脚本 goal 值
@@ -103,6 +104,9 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
     client = get_supabase_client()
 
     profile = _read_profile(client)
+    preference = _read_preference(client)
+    allergens = preference.get("allergens", [])
+    dislikes = preference.get("dislikes", [])
 
     # 解析 foods（可空）：场景 B 时 foods 为空列表
     items: list = []
@@ -127,6 +131,8 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
         "--weight", str(profile.get("weight_kg", 65)),
         "--activity", str(profile.get("activity_level", "light")),
         "--goal", GOAL_MAP.get(str(profile.get("goal", "normal")), "maintain"),
+        "--allergens", json.dumps(allergens, ensure_ascii=False),
+        "--dislikes", json.dumps(dislikes, ensure_ascii=False),
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -168,3 +174,36 @@ def _read_profile(client) -> dict:
     except Exception:  # noqa: BLE001
         return {}
     return cast(dict, response.data) if response is not None and response.data else {}
+
+
+def _read_preference(client) -> dict:
+    """读取已保存的过敏原/忌口偏好（user_preference，单用户模式）。"""
+    try:
+        response = (
+            client.table(PREF_TABLE)
+            .select("allergens, dislikes")
+            .eq("user_id", PROFILE_KEY)
+            .maybe_single()
+            .execute()
+        )
+    except APIError:
+        return {"allergens": [], "dislikes": []}
+    except Exception:  # noqa: BLE001
+        return {"allergens": [], "dislikes": []}
+    data = response.data if response is not None and response.data else {}
+    allergens = data.get("allergens") or []
+    dislikes = data.get("dislikes") or []
+    if isinstance(allergens, str):
+        try:
+            allergens = json.loads(allergens)
+        except Exception:  # noqa: BLE001
+            allergens = []
+    if isinstance(dislikes, str):
+        try:
+            dislikes = json.loads(dislikes)
+        except Exception:  # noqa: BLE001
+            dislikes = []
+    return {
+        "allergens": [str(x) for x in allergens] if isinstance(allergens, list) else [],
+        "dislikes": [str(x) for x in dislikes] if isinstance(dislikes, list) else [],
+    }
