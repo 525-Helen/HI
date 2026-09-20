@@ -62,6 +62,15 @@ FOOD_DB = {
     "黄油": {"热量_kcal": 717, "蛋白_g": 0.9, "碳水_g": 0.1, "脂肪_g": 81.0},
     "榴莲": {"热量_kcal": 150, "蛋白_g": 2.6, "碳水_g": 27.1, "脂肪_g": 3.3},
     "榴莲千层": {"热量_kcal": 260, "蛋白_g": 4.0, "碳水_g": 30.0, "脂肪_g": 15.0},
+    # —— 缺失高频食材补齐（每 100g，依据中国食物成分表/USDA）——
+    "杏仁": {"热量_kcal": 578, "蛋白_g": 21.0, "碳水_g": 22.0, "脂肪_g": 50.0},
+    "牛排": {"热量_kcal": 250, "蛋白_g": 26.0, "碳水_g": 0.0, "脂肪_g": 15.0},
+    "清蒸鱼": {"热量_kcal": 105, "蛋白_g": 20.0, "碳水_g": 0.0, "脂肪_g": 3.0},
+    "炒饭": {"热量_kcal": 180, "蛋白_g": 5.0, "碳水_g": 28.0, "脂肪_g": 6.0},
+    "红烧肉": {"热量_kcal": 480, "蛋白_g": 10.0, "碳水_g": 5.0, "脂肪_g": 45.0},
+    "蔬菜沙拉": {"热量_kcal": 50, "蛋白_g": 2.0, "碳水_g": 8.0, "脂肪_g": 1.0},
+    "意面": {"热量_kcal": 150, "蛋白_g": 5.0, "碳水_g": 30.0, "脂肪_g": 1.0},
+    "肉酱": {"热量_kcal": 200, "蛋白_g": 10.0, "碳水_g": 8.0, "脂肪_g": 15.0},
 }
 
 # 过敏原关键字 -> 过敏原分组
@@ -77,6 +86,22 @@ ALLERGEN_KEYWORDS = {
 
 # 库缺失时的通用回退估算（每 100g）
 FALLBACK = {"热量_kcal": 100.0, "蛋白_g": 5.0, "碳水_g": 15.0, "脂肪_g": 3.0}
+
+# 复合菜拆分规则：名称不在 FOOD_DB 精确命中时，按比例拆分到成分，并可选加额外油脂。
+# parts 为 [(成分, 占比)]，占比之和应为 1；oil_g 为额外添加的烹调油克数。
+COMPOUND_RULES = {
+    "番茄炒蛋": {"parts": [("番茄", 0.60), ("鸡蛋", 0.40)], "oil_g": 5},
+    "牛肉面": {"parts": [("面条", 0.80), ("牛肉", 0.20)], "oil_g": 0},
+    "宫保鸡丁": {"parts": [("鸡胸肉", 0.50), ("花生", 0.15), ("蔬菜", 0.35)], "oil_g": 0},
+    "炒饭": {"parts": [("米饭", 0.70), ("鸡蛋", 0.15), ("蔬菜", 0.15)], "oil_g": 5},
+    "麻辣烫": {"parts": [("蔬菜", 0.50), ("肉类", 0.30), ("主食", 0.20)], "oil_g": 0},
+}
+
+# 液体零卡白名单：命中（精确名称或包含≥2字关键词）则热量=0，宏量=0。
+ZERO_CAL_LIQUIDS = [
+    "水", "白开水", "矿泉水", "纯净水", "苏打水", "无糖气泡水",
+    "黑咖啡", "美式咖啡", "茶", "绿茶", "红茶", "乌龙茶", "零度可乐",
+]
 
 # 模糊家用单位：命中且无克数/无生活化描述/无状态时，视为"份量不明确"，强制澄清并问克数。
 # 注意：若用户已给出生活化描述(portion_desc)或状态(portion_state)，则走 PORTION_MAP/默认兜底，不再硬拦截。
@@ -366,39 +391,86 @@ def compute(foods, profile):
                 "message": f"识别置信度较低（{conf:.2f}），请向用户确认「{name}」的份量是否正确",
             })
 
-        # 精确匹配，其次子串匹配
-        food_key = None
-        if name in FOOD_DB:
-            food_key = name
-        else:
-            for key in FOOD_DB:
-                if key in name or name in key:
-                    food_key = key
-                    break
+        # —— 判定：复合菜拆分 / 液体零卡 / 普通食物 ——
+        is_compound = (name not in FOOD_DB) and (name in COMPOUND_RULES)
+        is_liquid = (not is_compound) and (
+            name in ZERO_CAL_LIQUIDS
+            or any(len(kw) >= 2 and kw in name for kw in ZERO_CAL_LIQUIDS)
+        )
 
-        if food_key:
-            per100 = FOOD_DB[food_key]
+        if is_compound:
+            # 复合菜：按比例拆分到成分，并加额外油脂；FOOD_DB 精确命中优先（如炒饭用其自身条目）。
+            rule = COMPOUND_RULES[name]
+            comp_totals = {"热量_kcal": 0.0, "蛋白_g": 0.0, "碳水_g": 0.0, "脂肪_g": 0.0}
+            for comp, frac in rule["parts"]:
+                comp_grams = grams * frac
+                cp = FOOD_DB.get(comp) or FALLBACK
+                f = comp_grams / 100.0
+                for k in comp_totals:
+                    comp_totals[k] += cp[k] * f
+            if rule.get("oil_g"):
+                oil = FOOD_DB["橄榄油"]
+                of = rule["oil_g"] / 100.0
+                for k in comp_totals:
+                    comp_totals[k] += oil[k] * of
+            item = {
+                "food": name, "matched_key": name,
+                "grams": _round(grams) if grams else 0.0,
+                "calories": _round(comp_totals["热量_kcal"]),
+                "protein": _round(comp_totals["蛋白_g"]),
+                "carb": _round(comp_totals["碳水_g"]),
+                "fat": _round(comp_totals["脂肪_g"]),
+                "confidence": conf,
+            }
+            items.append(item)
+            for k in totals:
+                totals[k] += comp_totals[k]
+        elif is_liquid:
+            # 液体零卡白名单：热量与宏量均为 0，不入库缺失提醒。
+            factor = grams / 100.0 if grams > 0 else 0.0
+            item = {
+                "food": name, "matched_key": "零卡饮品",
+                "grams": _round(grams) if grams else 0.0,
+                "calories": 0.0, "protein": 0.0, "carb": 0.0, "fat": 0.0,
+                "confidence": conf,
+            }
+            items.append(item)
+            for k in totals:
+                totals[k] += 0.0 * factor
         else:
-            per100 = FALLBACK
-            risk_flags.append({
-                "type": "nutrition_lookup_miss", "level": "tip",
-                "message": f"营养库未收录「{name}」，已按通用估算值计算，建议人工核对",
-            })
+            # 精确匹配，其次子串匹配
+            food_key = None
+            if name in FOOD_DB:
+                food_key = name
+            else:
+                for key in FOOD_DB:
+                    if key in name or name in key:
+                        food_key = key
+                        break
 
-        factor = grams / 100.0 if grams > 0 else 0.0
-        item = {
-            "food": name,
-            "matched_key": food_key or name,
-            "grams": _round(grams) if grams else 0.0,
-            "calories": _round(per100["热量_kcal"] * factor),
-            "protein": _round(per100["蛋白_g"] * factor),
-            "carb": _round(per100["碳水_g"] * factor),
-            "fat": _round(per100["脂肪_g"] * factor),
-            "confidence": conf,
-        }
-        items.append(item)
-        for k in totals:
-            totals[k] += per100[k] * factor
+            if food_key:
+                per100 = FOOD_DB[food_key]
+            else:
+                per100 = FALLBACK
+                risk_flags.append({
+                    "type": "nutrition_lookup_miss", "level": "tip",
+                    "message": f"营养库未收录「{name}」，已按通用估算值计算，建议人工核对",
+                })
+
+            factor = grams / 100.0 if grams > 0 else 0.0
+            item = {
+                "food": name,
+                "matched_key": food_key or name,
+                "grams": _round(grams) if grams else 0.0,
+                "calories": _round(per100["热量_kcal"] * factor),
+                "protein": _round(per100["蛋白_g"] * factor),
+                "carb": _round(per100["碳水_g"] * factor),
+                "fat": _round(per100["脂肪_g"] * factor),
+                "confidence": conf,
+            }
+            items.append(item)
+            for k in totals:
+                totals[k] += per100[k] * factor
 
         # 过敏校验（改用 user_preference 中的已登记过敏原，不再依赖当前对话上下文）
         # 当食物含有的过敏原分组命中用户登记的分组时，触发 high 级拦截；未登记时仅给 info 提示。
