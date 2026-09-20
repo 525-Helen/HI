@@ -80,7 +80,7 @@ def knowledge_search(query: str, top_k: int = 5) -> str:
 
 
 @tool
-def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optional[int] = None) -> str:
+def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optional[int] = None, meal_date: Optional[str] = None) -> str:
     """对饮食做确定性的热量与宏量营养计算，可算"某一餐"或"当日累计剩余"。
 
     适用于两类场景：
@@ -94,10 +94,14 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
     B. 用户给出"今日已累计摄入热量"（如"我今天吃了1500大卡，晚餐怎么补"）→ 只传 consumed_calories，
        函数会结合用户档案返回每日目标和剩余缺口 remaining_calories。
 
+    参数 meal_date（可选）：用户描述用餐时间所用的相对日期文本（如"昨天""上周三""三天前"）。
+    传入后函数会将其解析为具体日期 YYYY-MM-DD，解析成功则写入返回 JSON 的 meal_date 字段
+    （后续保存记录时应使用该日期）；解析失败则返回 meal_date: null，此时应追问用户具体日期。
+
     函数会读取用户已保存档案（身高/体重/年龄/性别/活动水平/目标）作为计算口径；未保存则用默认值（30岁/男/170cm/65kg/light/maintain）。
     返回：JSON 字符串，含热量(calories)、宏量(protein/carb/fat)、目标(target_*)、剩余热量(remaining_calories)、
     完成度(pct_consumed)、是否需要澄清(needs_clarification)、澄清类型(clarification_type: none/grams/estimate)、
-    安全预警(risk_flags)与逐项明细(items)。
+    安全预警(risk_flags)、逐项明细(items)与解析后的用餐日期(meal_date)。
     场景 A 时 calories 为本餐热量；场景 B 时 calories 为已累计热量、remaining_calories = target_calories - consumed_calories。
     """
     _get_ctx()
@@ -107,6 +111,12 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
     preference = _read_preference(client)
     allergens = preference.get("allergens", [])
     dislikes = preference.get("dislikes", [])
+
+    # 解析相对日期 → 具体日期（YYYY-MM-DD），失败为 None
+    from tools.date_parser import parse_relative_date
+    resolved_date: Optional[str] = None
+    if meal_date:
+        resolved_date = parse_relative_date(meal_date)
 
     # 解析 foods（可空）：场景 B 时 foods 为空列表
     items: list = []
@@ -142,6 +152,18 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
         trial = out
         if result.returncode != 0 and not trial.startswith("{"):
             return json.dumps({"status": "error", "message": trial[:500]}, ensure_ascii=False)
+
+        def _inject_date(payload: str) -> str:
+            """把解析出的用餐日期注入返回 JSON 的 meal_date 字段。"""
+            try:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    data["meal_date"] = resolved_date
+                    return json.dumps(data, ensure_ascii=False)[:4000]
+            except Exception:  # noqa: BLE001
+                pass
+            return payload[:4000]
+
         # 场景 B：仅给累计热量时，重算剩余缺口
         if consumed_calories is not None and not items:
             try:
@@ -151,10 +173,11 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
                 data["calories"] = consumed
                 data["remaining_calories"] = round(target - consumed, 1)
                 data["pct_consumed"] = round(consumed / target * 100, 1) if target else 0
+                data["meal_date"] = resolved_date
                 return json.dumps(data, ensure_ascii=False)[:4000]
             except Exception:  # noqa: BLE001
-                return trial[:4000]
-        return trial[:4000]
+                return _inject_date(trial)
+        return _inject_date(trial)
     except Exception as e:  # noqa: BLE001
         return json.dumps({"status": "error", "message": f"营养计算执行失败: {e}"}, ensure_ascii=False)
 
