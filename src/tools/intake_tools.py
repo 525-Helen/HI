@@ -85,13 +85,18 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
     适用于两类场景：
     A. 用户记录/询问"某餐吃了什么" → 传入 foods（结构化食物明细 JSON 字符串）：
        '[{"food":"米饭","grams":200,"confidence":0.95},{"food":"鸡胸肉","grams":150,"confidence":0.9}]'
-       其中 grams 为该食物估算克数，confidence 为识别置信度(0~1，默认1)。请把"1个鸡蛋"等折算为约 50g。
+       份量取值遵循"精准优先、估算兜底"三级逻辑，foods 每个元素可按需带以下字段：
+       - grams：明确克数（如 200）。一旦给出明确克数，将直接计算，不再查生活化映射。
+       - portion_desc：用户用生活化描述回答份量（如"普通碗，八分满""一个掌心大小"）。填入原文，函数会映射为克数（confidence≈0.6）后计算。
+       - portion_state：当用户明确表示"不知道/不清楚/没称过"时填 "unknown"（触发参照物估算引导）；再次确认后仍说"不知道/不确定"时填 "unknown_still"（按普通份量默认值估算，confidence≈0.4 并附±20%误差提示）。
+       若既无明确克数、又无 portion_desc/portion_state，且食物名带有模糊单位（碗/盘/块/份等），将返回 needs_clarification=true（clarification_type=grams），此时【绝不能】输出热量数字，只能追问克数。
     B. 用户给出"今日已累计摄入热量"（如"我今天吃了1500大卡，晚餐怎么补"）→ 只传 consumed_calories，
        函数会结合用户档案返回每日目标和剩余缺口 remaining_calories。
 
     函数会读取用户已保存档案（身高/体重/年龄/性别/活动水平/目标）作为计算口径；未保存则用默认值（30岁/男/170cm/65kg/light/maintain）。
     返回：JSON 字符串，含热量(calories)、宏量(protein/carb/fat)、目标(target_*)、剩余热量(remaining_calories)、
-    完成度(pct_consumed)、安全预警(risk_flags)与逐项明细(items)。
+    完成度(pct_consumed)、是否需要澄清(needs_clarification)、澄清类型(clarification_type: none/grams/estimate)、
+    安全预警(risk_flags)与逐项明细(items)。
     场景 A 时 calories 为本餐热量；场景 B 时 calories 为已累计热量、remaining_calories = target_calories - consumed_calories。
     """
     _get_ctx()
