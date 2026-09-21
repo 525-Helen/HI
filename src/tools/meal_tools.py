@@ -51,15 +51,21 @@ def save_meal_record(
     calories: int,
     food_items: List[dict],
     notes: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ) -> str:
-    """记录一餐的卡路里摄入并持久化。
+    """记录一餐的卡路里摄入并持久化（仅允许保存在 diet_nutrition_agent 明确允许落库的结果）。
 
     参数说明：
     - meal_type: 餐次，取值 breakfast(早餐) / lunch(午餐) / dinner(晚餐) / snack(加餐)
-    - meal_date: 用餐日期，格式 YYYY-MM-DD
+    - meal_date: 用餐日期，格式 YYYY-MM-DD（必须使用 diet_nutrition_agent 返回的具体日期）
     - calories: 该餐总卡路里（kcal，整数）
     - food_items: 食物明细列表，每项为 {"name": "食物名称", "calories": 单项卡路里}
     - notes: 备注（可选）
+    - idempotency_key: 幂等键（可选），用于避免同一餐/同一请求重复保存。建议用 "{meal_date}_{meal_type}_{主食物}" 或来源 request_id。已有同 key 记录时会返回提示并跳过，不会二次入库。
+
+    约束（重要）：
+    - 只有在 diet_nutrition_agent 返回 needs_clarification=false 且无未处理的关键风险时才可调用；
+    - 若份量仍待澄清、工具失败或存在未处理过敏等关键风险，【禁止】调用本工具。
 
     返回：记录结果说明。
     """
@@ -69,17 +75,23 @@ def save_meal_record(
     if meal_type not in MEAL_TYPES:
         meal_type = "snack"
 
+    if calories < 0:
+        calories = 0
+
+    # 校验日期格式，失败则按当天（不编造相对日期）
     try:
-        # 校验日期格式
         datetime.strptime(meal_date, "%Y-%m-%d")
-    except ValueError:
+    except (ValueError, TypeError):
         meal_date = date.today().isoformat()
 
     # 校验食物明细结构
     validated_items = []
     for item in food_items or []:
-        name = str(item.get("name", "未知食物"))
-        cal = int(item.get("calories", 0))
+        try:
+            name = str(item.get("name", "未知食物"))
+            cal = int(item.get("calories", 0))
+        except (AttributeError, ValueError, TypeError):
+            continue
         validated_items.append({"name": name, "calories": cal})
 
     row = {
@@ -89,8 +101,26 @@ def save_meal_record(
         "food_items": validated_items if validated_items else [{"name": "其他", "calories": int(calories)}],
         "notes": notes,
     }
+    if idempotency_key:
+        row["request_id"] = idempotency_key
+
+    # 幂等：同 request_id 已存在则不再重复保存
+    if idempotency_key:
+        try:
+            dup = (
+                client.table(TABLE)
+                .select("request_id")
+                .eq("request_id", idempotency_key)
+                .limit(1)
+                .execute()
+            )
+            if dup.data:
+                return f"该请求（idempotency_key={idempotency_key}）已记录过，未重复保存。"
+        except APIError:
+            pass
+
     try:
-        response = client.table(TABLE).insert(row).execute()
+        client.table(TABLE).insert(row).execute()
     except APIError as e:
         raise Exception(f"记录失败: {e.message}")
     except Exception as e:
