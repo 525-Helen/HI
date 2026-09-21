@@ -78,20 +78,31 @@ def save_meal_record(
     if calories < 0:
         calories = 0
 
-    # 校验日期格式，失败则按当天（不编造相对日期）
-    try:
-        datetime.strptime(meal_date, "%Y-%m-%d")
-    except (ValueError, TypeError):
-        meal_date = date.today().isoformat()
+    def _resp(success, created, duplicate, record_id, message):
+        return json.dumps({
+            "success": success, "created": created, "duplicate": duplicate,
+            "record_id": record_id, "message": message,
+        }, ensure_ascii=False)
 
-    # 校验食物明细结构
+    # 日期必须是合法具体日期；非法/相对日期一律拒绝，禁止默认落当天
+    try:
+        datetime.strptime(str(meal_date), "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return _resp(False, False, False, None,
+                     "日期格式不合法或不是具体日期（需 YYYY-MM-DD），请向用户追问具体日期后重试。")
+
+    # 校验食物明细结构（结构非法视为参数错误，不编造数据）
     validated_items = []
     for item in food_items or []:
+        if not isinstance(item, dict):
+            return _resp(False, False, False, None,
+                         "food_items 结构格式错误，保存失败，请检查后重试。")
         try:
             name = str(item.get("name", "未知食物"))
             cal = int(item.get("calories", 0))
         except (AttributeError, ValueError, TypeError):
-            continue
+            return _resp(False, False, False, None,
+                         "food_items 中食物热量格式错误，保存失败，请检查后重试。")
         validated_items.append({"name": name, "calories": cal})
 
     row = {
@@ -104,7 +115,7 @@ def save_meal_record(
     if idempotency_key:
         row["request_id"] = idempotency_key
 
-    # 幂等：同 request_id 已存在则不再重复保存
+    # 幂等：同 request_id 已存在则不再重复保存，返回 duplicate
     if idempotency_key:
         try:
             dup = (
@@ -115,22 +126,34 @@ def save_meal_record(
                 .execute()
             )
             if dup.data:
-                return f"该请求（idempotency_key={idempotency_key}）已记录过，未重复保存。"
+                rid = dup.data[0].get("id") if isinstance(dup.data[0], dict) else None
+                return _resp(True, False, True, rid,
+                             "该请求（idempotency_key=%s）记录已存在，未重复新增。" % idempotency_key)
         except APIError:
             pass
 
     try:
-        client.table(TABLE).insert(row).execute()
+        resp = client.table(TABLE).insert(row).execute()
     except APIError as e:
+        # 并发场景下先查后写存在竞态窗口，由 DB 唯一索引兜底：
+        # 重复 idempotency_key 的写入会触发 unique_violation(23505)，应转为 duplicate 而非报错。
+        code = getattr(e, "code", None) or getattr(e, "status", None) or ""
+        if idempotency_key and "23505" in str(code):
+            return _resp(True, False, True, None,
+                         "该请求（idempotency_key=%s）记录已存在（并发写入唯一约束拦截），未重复新增。" % idempotency_key)
         raise Exception(f"记录失败: {e.message}")
     except Exception as e:
         raise Exception(f"记录失败: {str(e)}")
 
+    record_id = None
+    if resp.data and isinstance(resp.data, list) and resp.data and isinstance(resp.data[0], dict):
+        record_id = resp.data[0].get("id")
+
     type_map = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
-    return (
-        f"已记录 {type_map.get(meal_type, meal_type)}（{meal_date}）"
-        f"共 {row['calories']} kcal，包含 {len(validated_items)} 项食物。"
-    )
+    return _resp(True, True, False, record_id,
+                 "已保存 %s（%s）共 %d kcal，包含 %d 项食物。" % (
+                     type_map.get(meal_type, meal_type), meal_date,
+                     row["calories"], len(validated_items)))
 
 
 @tool

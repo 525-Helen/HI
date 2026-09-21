@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from typing import Optional, cast
 
 from langchain.tools import tool
@@ -154,11 +155,17 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
             return json.dumps({"status": "error", "message": trial[:500]}, ensure_ascii=False)
 
         def _inject_date(payload: str) -> str:
-            """把解析出的用餐日期注入返回 JSON 的 meal_date 字段。"""
+            """把解析出的用餐日期与本次计算的幂等键注入返回 JSON。
+
+            request_id 为本次计算调用的唯一标识：同一计算结果返回同一 request_id，
+            不同餐/不同日期/份量修改后的重算会生成新的 request_id，作为 save_meal_record
+            的 idempotency_key，避免同一天重复吃同一食物被错误去重。
+            """
             try:
                 data = json.loads(payload)
                 if isinstance(data, dict):
                     data["meal_date"] = resolved_date
+                    data["request_id"] = str(uuid.uuid4())
                     return json.dumps(data, ensure_ascii=False)[:4000]
             except Exception:  # noqa: BLE001
                 pass
@@ -174,6 +181,7 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
                 data["remaining_calories"] = round(target - consumed, 1)
                 data["pct_consumed"] = round(consumed / target * 100, 1) if target else 0
                 data["meal_date"] = resolved_date
+                data["request_id"] = str(uuid.uuid4())
                 return json.dumps(data, ensure_ascii=False)[:4000]
             except Exception:  # noqa: BLE001
                 return _inject_date(trial)
