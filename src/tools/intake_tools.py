@@ -8,7 +8,6 @@ import json
 import os
 import subprocess
 import sys
-import uuid
 from typing import Optional, cast
 
 from langchain.tools import tool
@@ -17,6 +16,7 @@ from postgrest.exceptions import APIError
 from storage.database.supabase_client import get_supabase_client
 from coze_coding_utils.log.write_log import request_context
 from coze_coding_utils.runtime_ctx.context import new_context
+from tools.request_id import get_or_create_request_id
 
 PROFILE_KEY = "default"
 PROFILE_TABLE = "user_profiles"
@@ -155,17 +155,19 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
             return json.dumps({"status": "error", "message": trial[:500]}, ensure_ascii=False)
 
         def _inject_date(payload: str) -> str:
-            """把解析出的用餐日期与本次计算的幂等键注入返回 JSON。
+            """把解析出的用餐日期与本次请求的幂等键注入返回 JSON。
 
-            request_id 为本次计算调用的唯一标识：同一计算结果返回同一 request_id，
-            不同餐/不同日期/份量修改后的重算会生成新的 request_id，作为 save_meal_record
-            的 idempotency_key，避免同一天重复吃同一食物被错误去重。
+            request_id 为整条用户请求进入工作流时生成一次的唯一标识（来源 request_id 上下文），
+            贯穿意图识别、份量澄清、营养计算、保存与所有重试流程：同一请求内 diet_nutrition_agent
+            或 save_meal_record 重试时复用同一 request_id；用户补充克数/修改份量（新请求）
+            时生成新的 request_id。作为 save_meal_record 的 idempotency_key，
+            避免同一请求重复保存被错误去重或重复入库。
             """
             try:
                 data = json.loads(payload)
                 if isinstance(data, dict):
                     data["meal_date"] = resolved_date
-                    data["request_id"] = str(uuid.uuid4())
+                    data["request_id"] = get_or_create_request_id()
                     return json.dumps(data, ensure_ascii=False)[:4000]
             except Exception:  # noqa: BLE001
                 pass
@@ -181,7 +183,7 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
                 data["remaining_calories"] = round(target - consumed, 1)
                 data["pct_consumed"] = round(consumed / target * 100, 1) if target else 0
                 data["meal_date"] = resolved_date
-                data["request_id"] = str(uuid.uuid4())
+                data["request_id"] = get_or_create_request_id()
                 return json.dumps(data, ensure_ascii=False)[:4000]
             except Exception:  # noqa: BLE001
                 return _inject_date(trial)

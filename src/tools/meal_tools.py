@@ -14,6 +14,7 @@ from postgrest.exceptions import APIError
 from storage.database.supabase_client import get_supabase_client
 from coze_coding_utils.log.write_log import request_context
 from coze_coding_utils.runtime_ctx.context import new_context
+from tools.request_id import get_or_create_request_id
 
 MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
 
@@ -72,17 +73,29 @@ def save_meal_record(
     _get_ctx()
     client = _get_client()
 
-    if meal_type not in MEAL_TYPES:
-        meal_type = "snack"
-
-    if calories < 0:
-        calories = 0
-
     def _resp(success, created, duplicate, record_id, message):
         return json.dumps({
             "success": success, "created": created, "duplicate": duplicate,
             "record_id": record_id, "message": message,
         }, ensure_ascii=False)
+
+    # 第4条：idempotency_key 必须等于当前请求的 request_id。
+    # 整条用户请求进入工作流时生成一次 request_id（request_id 上下文），
+    # 保存重试、计算超时重试等同一请求内都会复用同一 request_id，从而不重复落库；
+    # 用户补充克数/修改份量触发新请求时，request_id 不同，会生成新记录。
+    key = get_or_create_request_id()
+    # 若调用方显式传入 idempotency_key，仅当与请求级 request_id 一致时采用，
+    # 避免出现同一请求内 key 漂移导致的重复入库。
+    if idempotency_key and idempotency_key != key:
+        return _resp(False, False, False, None,
+                     "idempotency_key 与当前请求 request_id 不一致，已拒绝保存，请使用请求级 request_id 重试。")
+    idempotency_key = key
+
+    if meal_type not in MEAL_TYPES:
+        meal_type = "snack"
+
+    if calories < 0:
+        calories = 0
 
     # 日期必须是合法具体日期；非法/相对日期一律拒绝，禁止默认落当天
     try:
