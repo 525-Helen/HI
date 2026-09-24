@@ -7,6 +7,23 @@ import datetime
 import re
 from typing import Optional
 
+# 指代不明的日期短语：无法确定具体是哪一天，必须追问，禁止臆测/禁止保存。
+AMBIGUOUS_DATE_PHRASES = [
+    "那天", "那一天", "某天", "某日", "之前那次", "上次那次", "上回那",
+    "那一次", "那一天中午", "那天晚上", "那天早上",
+]
+
+
+def is_ambiguous_date(text: str) -> bool:
+    """判断文本是否包含指代不明的日期（如"那天/某天/之前那次"）。
+
+    此类日期无法解析为具体 YYYY-MM-DD，流程应返回 meal_date=null 并要求用户确认。
+    """
+    if not text:
+        return False
+    return any(p in text for p in AMBIGUOUS_DATE_PHRASES)
+
+
 WEEKDAY_MAP = {
     "一": 0, "1": 0, "周一": 0, "星期一": 0,
     "二": 1, "2": 1, "周二": 1, "星期二": 1,

@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import datetime
 from typing import Optional, cast
 
 from langchain.tools import tool
@@ -17,6 +18,7 @@ from storage.database.supabase_client import get_supabase_client
 from coze_coding_utils.log.write_log import request_context
 from coze_coding_utils.runtime_ctx.context import new_context
 from tools.request_id import get_or_create_request_id
+from tools.request_date import set_resolved_date, set_ambiguous
 
 PROFILE_KEY = "default"
 PROFILE_TABLE = "user_profiles"
@@ -113,11 +115,21 @@ def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optiona
     allergens = preference.get("allergens", [])
     dislikes = preference.get("dislikes", [])
 
-    # 解析相对日期 → 具体日期（YYYY-MM-DD），失败为 None
-    from tools.date_parser import parse_relative_date
+    # 相对日期仅在计算端解析一次，作为全请求的权威用餐日期，写入请求级上下文供保存端复用。
+    # 指代不明日期（那天/某天等）不得臆测，返回 meal_date=null 并标记 ambiguous，需追问确认。
+    from tools.date_parser import parse_relative_date, is_ambiguous_date
     resolved_date: Optional[str] = None
     if meal_date:
-        resolved_date = parse_relative_date(meal_date)
+        if is_ambiguous_date(meal_date):
+            set_ambiguous(True)
+            resolved_date = None
+        else:
+            resolved_date = parse_relative_date(meal_date)
+    else:
+        # 未提及日期 → 视为当天
+        resolved_date = datetime.date.today().isoformat()
+    # 写入请求级日期上下文：diet 与 save 全程复用同一权威日期，保存端禁止二次解析。
+    set_resolved_date(resolved_date)
 
     # 解析 foods（可空）：场景 B 时 foods 为空列表
     items: list = []

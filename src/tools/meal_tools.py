@@ -79,6 +79,20 @@ def save_meal_record(
             "record_id": record_id, "message": message,
         }, ensure_ascii=False)
 
+    # 日期一致性：相对日期已在计算端(diet_nutrition_agent)解析一次并写入请求级上下文，
+    # 保存端必须复用该权威日期，禁止二次解析相对日期，避免"计算端与落库日期不一致"。
+    from tools.request_date import get_resolved_date, is_ambiguous
+
+    # 指代不明日期（那天/某天/之前那次等）：不得臆测，禁止保存。
+    if is_ambiguous():
+        return _resp(False, False, False, None,
+                     "用餐日期不明确（无法确定具体是哪一天），请先向用户确认具体日期后再保存，禁止保存到默认日期。")
+
+    ctx_date = get_resolved_date()
+    if ctx_date:
+        # 统一复用计算端解析出的权威日期（YYYY-MM-DD）
+        meal_date = ctx_date
+
     # 第4条：idempotency_key 必须等于当前请求的 request_id。
     # 整条用户请求进入工作流时生成一次 request_id（request_id 上下文），
     # 保存重试、计算超时重试等同一请求内都会复用同一 request_id，从而不重复落库；

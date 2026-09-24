@@ -240,6 +240,53 @@ def resolve_user_allergen_groups(declared) -> set:
     return groups
 
 
+# 宽泛大类过敏原词：用户登记这些词时，按过敏原分组匹配（会命中组内所有食物）。
+BROAD_ALLERGEN_WORDS = {
+    "海鲜": frozenset({"鱼类", "甲壳类"}),
+    "海味": frozenset({"鱼类", "甲壳类"}),
+    "甲壳类": frozenset({"甲壳类"}),
+    "贝壳类": frozenset({"甲壳类"}),
+    "壳": frozenset({"甲壳类"}),
+    "乳制品": frozenset({"乳制品"}),
+    "奶制品": frozenset({"乳制品"}),
+    "蛋类": frozenset({"蛋类"}),
+    "鱼类": frozenset({"鱼类"}),
+    "大豆类": frozenset({"大豆"}),
+    "麸质类": frozenset({"麸质"}),
+}
+
+
+def food_triggers_declared_allergen(food_name: str, declared) -> list:
+    """判定食物是否触发已登记过敏原（精确优先，拒绝按大类泛化误拦）。
+
+    返回命中的过敏原标签列表（空列表表示不触发拦截）。
+    - 用户登记的是具体过敏原名（如"蟹""虾""牛奶""花生"）→ 仅当食物名包含该精确名时拦截；
+    - 用户登记的是宽泛大类词（如"海鲜""甲壳类""乳制品"）→ 才按分组匹配组内食物。
+    """
+    if not declared:
+        return []
+    exact_matches = []
+    broad_groups = set()
+    for s in declared:
+        ss = str(s).strip()
+        if not ss:
+            continue
+        if ss in BROAD_ALLERGEN_WORDS:
+            broad_groups |= set(BROAD_ALLERGEN_WORDS[ss])
+        else:
+            exact_matches.append(ss)
+
+    # 精确命中：食物名包含任一登记的具体过敏原名。
+    for em in exact_matches:
+        if em and em in food_name:
+            return [em]
+
+    # 宽泛分组命中。
+    food_groups = food_allergen_groups(food_name)
+    hit = food_groups & broad_groups
+    return list(hit)
+
+
 def food_allergen_groups(name: str) -> set:
     """根据食物名判断该食物可能含有的过敏原分组。"""
     groups = set()
@@ -306,6 +353,23 @@ def compute(foods, profile):
                 "food": name, "matched_key": name, "grams": 0.0,
                 "calories": 0.0, "protein": 0.0, "carb": 0.0, "fat": 0.0,
                 "confidence": conf, "_needs_clarification": True,
+            })
+            continue
+
+        # ============ 拒绝估算（P0）：用户明确"不想估算/拒绝估算/别估算" ============
+        # 不得输出任何热量/营养/进度数字，不得保存默认估算；只能要求克数或说明无法计算。
+        if portion_state == "refuse":
+            needs_clarification = True
+            if clarification_type == "none":
+                clarification_type = "refuse"
+            items.append({
+                "food": name, "matched_key": name, "grams": 0.0,
+                "calories": 0.0, "protein": 0.0, "carb": 0.0, "fat": 0.0,
+                "confidence": conf, "_needs_clarification": True, "_refused": True,
+            })
+            risk_flags.append({
+                "type": "portion_refused", "level": "warning",
+                "message": f"用户拒绝估算「{name}」的份量，无法提供热量，请先确认克数",
             })
             continue
 
@@ -472,22 +536,23 @@ def compute(foods, profile):
             for k in totals:
                 totals[k] += per100[k] * factor
 
-        # 过敏校验（改用 user_preference 中的已登记过敏原，不再依赖当前对话上下文）
-        # 当食物含有的过敏原分组命中用户登记的分组时，触发 high 级拦截；未登记时仅给 info 提示。
-        user_allergen_groups = resolve_user_allergen_groups(profile.get("allergens") or [])
-        food_groups = food_allergen_groups(name)
-        if user_allergen_groups and (user_allergen_groups & food_groups):
-            hit = user_allergen_groups & food_groups
+        # 过敏校验（精确优先，拒绝按大类泛化误拦）
+        # 规则：用户登记的具体过敏原名（如"蟹""牛奶"）命中食物名才触发拦截；
+        #       仅当用户登记的是宽泛大类词（海鲜/甲壳类/乳制品/蛋类等）才按分组匹配。
+        # 例：登记「蟹」不会拦截「虾仁」（虾仁不含"蟹"）；登记「海鲜」才会同时拦截虾/蟹/鱼。
+        hit_labels = food_triggers_declared_allergen(name, profile.get("allergens") or [])
+        if hit_labels:
             if not any(r.get("type") == "allergen_alert" for r in risk_flags):
                 risk_flags.append({
                     "type": "allergen_alert", "level": "high",
-                    "message": f"「{name}」含有{('、'.join(sorted(hit)))}，与你登记在案的过敏原冲突，请避免食用；如已食用出现不适请及时就医",
+                    "message": f"「{name}」含有{('、'.join(sorted(hit_labels)))}，与你登记在案的过敏原冲突，请避免食用；如已食用出现不适请及时就医",
                 })
-        elif food_groups:
+        elif food_allergen_groups(name):
+            fg = food_allergen_groups(name)
             if not any(r.get("type") == "allergen_info" for r in risk_flags):
                 risk_flags.append({
                     "type": "allergen_info", "level": "info",
-                    "message": f"「{name}」可能含有{('、'.join(sorted(food_groups)))}，若你对其过敏请在建档时登记以便拦截",
+                    "message": f"「{name}」可能含有{('、'.join(sorted(fg)))}，若你对其过敏请在建档时登记以便拦截",
                 })
 
         # 忌口校验：命中 user_preference 的 dislikes 时提醒

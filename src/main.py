@@ -36,6 +36,7 @@ from coze_coding_utils.async_tasks import config as async_task_config
 from coze_coding_utils.async_tasks.headers import HEADER_X_RUN_ID as _ASYNC_HEADER_X_RUN_ID
 from coze_coding_utils.runtime_ctx.context import new_context as _new_async_ctx
 from tools.request_id import set_request_id
+from tools.request_date import reset_request_date
 from sqlalchemy import event
 
 setup_logging(
@@ -314,6 +315,7 @@ async def http_async_run(request: Request) -> dict:
     ctx.run_id = run_id
     request_context.set(ctx)  # 与其他 HTTP endpoint 一致：让日志组件拿到 run_id 等信息
     set_request_id(str(uuid.uuid4()))
+    reset_request_date()
     run_config = init_run_config(async_graph, ctx)
     run_config["recursion_limit"] = async_task_config.RECURSION_LIMIT
     run_config.setdefault("configurable", {})["thread_id"] = run_id
@@ -387,6 +389,7 @@ async def http_run(request: Request) -> Dict[str, Any]:
     request_context.set(ctx)
     # 整条用户请求进入工作流时生成唯一 request_id，贯穿意图识别/澄清/计算/保存/重试
     set_request_id(str(uuid.uuid4()))
+    reset_request_date()
 
     logger.info(
         f"Received request for /run: "
@@ -468,6 +471,7 @@ async def http_stream_run(request: Request):
     workflow_debug = workflow_stream_mode == "debug"
     request_context.set(ctx)
     set_request_id(str(uuid.uuid4()))
+    reset_request_date()
     raw_body = await request.body()
     try:
         body_text = raw_body.decode("utf-8")
