@@ -11,6 +11,8 @@ from typing import Optional
 AMBIGUOUS_DATE_PHRASES = [
     "那天", "那一天", "某天", "某日", "之前那次", "上次那次", "上回那",
     "那一次", "那一天中午", "那天晚上", "那天早上",
+    # "有一天/某一晚/某个晚上" 等虚指时间，无法确定具体是哪一天，禁止臆测保存
+    "有一天", "某一晚", "某个晚上", "某晚",
 ]
 
 
@@ -81,6 +83,11 @@ def parse_relative_date(text: str, reference_date: Optional[datetime.date] = Non
         except ValueError:
             return None
 
+    # 上个月的今天/上个月/上月（须先于"今天/今日"判断，
+    # 否则"上个月的今天/上月的今天"会被"今天"子串吸收而误判为今天）
+    if re.search(r"(上个月|上月)", t):
+        return _prev_month(ref).isoformat()
+
     # 今天/今日
     if re.search(r"(今天|今日)", t):
         return ref.isoformat()
@@ -119,9 +126,5 @@ def parse_relative_date(text: str, reference_date: Optional[datetime.date] = Non
     if re.search(r"(上个星期|上一周)", t):
         this_monday = ref - datetime.timedelta(days=ref.weekday())
         return (this_monday - datetime.timedelta(days=7)).isoformat()
-
-    # 上个月/上月
-    if re.search(r"(上个月|上月)", t):
-        return _prev_month(ref).isoformat()
 
     return None
