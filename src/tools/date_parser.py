@@ -100,10 +100,10 @@ def parse_relative_date(text: str, reference_date: Optional[datetime.date] = Non
     # 前天/前一天
     if re.search(r"(前天|前一天)", t):
         return (ref - datetime.timedelta(days=2)).isoformat()
-    # N 天前 / 三·五·十天前（支持中文数字 1-10）
-    m = re.search(r"([0-9一二三四五六七八九十]+)\s*(?:天|日)(?:前|以前)?", t)
+    # N 天前 / 三·五·十天前（支持中文数字 1-10，含"两"→2）
+    m = re.search(r"([0-9一二两三四五六七八九十]+)\s*(?:天|日)(?:前|以前)?", t)
     if m:
-        num = int({"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+        num = int({"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
                    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}.get(m.group(1), m.group(1) or "0"))
         return (ref - datetime.timedelta(days=num)).isoformat()
 

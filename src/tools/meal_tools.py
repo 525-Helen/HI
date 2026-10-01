@@ -188,17 +188,31 @@ def get_daily_intake(meal_date: str) -> str:
     """查询指定日期（YYYY-MM-DD）的全部用餐记录并汇总当日总卡路里。
 
     参数说明：
-    - meal_date: 日期，格式 YYYY-MM-DD
+    - meal_date: 日期，格式 YYYY-MM-DD；也支持相对日期文本（如"今天/昨天/前天/两天前"），
+      入口处会统一解析为具体 YYYY-MM-DD 并写入请求级上下文，供本请求内计算/查询/保存端复用同一日期。
 
     返回：当日三餐（含加餐）的记录明细与总卡路里汇总。
     """
     _get_ctx()
     client = _get_client()
 
-    try:
-        datetime.strptime(meal_date, "%Y-%m-%d")
-    except ValueError:
-        meal_date = date.today().isoformat()
+    # 日期统一解析：同一个请求内，计算端(diet)、查询端(get_daily_intake)、保存端(save_meal_record)
+    # 必须使用同一个解析结果。优先复用已写入请求级上下文的权威日期，避免二次解析出现分歧；
+    # 相对日期在此解析一次并写入上下文；无法确定/解析失败时【不得】默认成今天，必须要求具体日期。
+    from tools.date_parser import parse_relative_date, is_ambiguous_date
+    from tools.request_date import get_resolved_date, set_resolved_date, set_ambiguous
+
+    if is_ambiguous_date(meal_date):
+        set_ambiguous(True)
+        return "😕 用餐日期不明确（%s），无法确定具体是哪一天，请提供具体日期后重试。" % meal_date
+
+    resolved = get_resolved_date()
+    if not resolved:
+        resolved = parse_relative_date(meal_date)
+        if resolved is None:
+            return "😕 无法解析日期「%s」为具体日期（需 YYYY-MM-DD），请提供具体日期后重试。" % meal_date
+        set_resolved_date(resolved)
+    meal_date = resolved
 
     try:
         response = (
