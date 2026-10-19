@@ -323,3 +323,78 @@ def save_diet_plan(plan: str) -> str:
     if not response.data:
         return "⚠️ 尚未建立个人资料，无法保存饮食计划。请先提供身体数据与目标（save_user_profile）。"
     return "✅ 你的个性化饮食计划已保存，随时可回顾。"
+
+
+@tool
+def delete_user_profile(clear: bool = False, allergens: Optional[str] = None, dislikes: Optional[str] = None) -> str:
+    """删除用户过敏原/忌口项。用于用户明确要求移除档案中的某（些）过敏原或忌口（如"我不对虾过敏了，删掉虾""去掉忌口芹菜"）。
+
+    参数说明（均可选）：
+    - clear: 传 True 时清空全部过敏原与忌口；此时 allergens/dislikes 参数忽略。
+    - allergens: 要删除的过敏原，JSON数组字符串（如 "["虾"]"）或逗号分隔字符串（如 "虾,花生"）；从现有过敏原列表中移除指定项。
+    - dislikes: 要删除的忌口，同上；从现有忌口列表中移除指定项。
+
+    【与 save_user_profile 的分工】
+    - 用户"整体纠正/重新声明"过敏或忌口（给出完整的最新列表）→ 用 save_user_profile 以最新列表覆盖（以最新确认信息为准）。
+    - 用户"仅移除某单项"而无须改动其余字段 → 用本工具，只移除指定项，保留其他过敏/忌口。
+
+    身体数据、目标与热量目标（user_profiles）不受本工具影响（如需清空请另行确认）。
+    返回：删除后的过敏原/忌口结果说明。
+    """
+    _get_ctx()
+    client = _get_client()
+
+    # 读取当前偏好；若 preference 不存在则视为空
+    existing = _read_preference(client)
+    allergens_now = existing.get("allergens", [])
+    dislikes_now = existing.get("dislikes", [])
+
+    # 读取当前目标，维持 user_preference.goal_type 与档案一致
+    existing_profile = _read_existing_profile(client)
+    goal_now = existing_profile.get("goal") or "normal"
+
+    if clear:
+        allergens_new, dislikes_new = [], []
+    else:
+        # 移除指定项
+        rem_all = set(_parse_tags(allergens)) if allergens is not None else None
+        rem_dis = set(_parse_tags(dislikes)) if dislikes is not None else None
+        if rem_all is not None:
+            allergens_new = [x for x in allergens_now if x not in rem_all]
+        else:
+            allergens_new = allergens_now
+        if rem_dis is not None:
+            dislikes_new = [x for x in dislikes_now if x not in rem_dis]
+        else:
+            dislikes_new = dislikes_now
+
+    pref_row = {
+        "user_id": PROFILE_KEY,
+        "allergens": json.dumps(allergens_new, ensure_ascii=False) if allergens_new else "[]",
+        "dislikes": json.dumps(dislikes_new, ensure_ascii=False) if dislikes_new else "[]",
+        "goal_type": goal_now,
+        "updated_at": "now()",
+    }
+    try:
+        client.table(PREF_TABLE).upsert(pref_row, on_conflict="user_id").execute()
+    except APIError as e:
+        raise Exception(f"删除过敏原/忌口失败: {e.message}")
+    except Exception as e:
+        raise Exception(f"删除过敏原/忌口失败: {str(e)}")
+
+    parts = []
+    if clear:
+        # attempt to clear preference row entirely
+        try:
+            client.table(PREF_TABLE).delete().eq("user_id", PROFILE_KEY).execute()
+        except Exception:  # noqa: BLE001
+            pass
+        parts.append("🗑️ 已清空过敏原与忌口档案。")
+    else:
+        if rem_all is not None:
+            parts.append(f"🗑️ 已删除过敏原：{', '.join(sorted(rem_all))}（剩余：{'、'.join(allergens_new) if allergens_new else '无'}）。")
+        if rem_dis is not None:
+            parts.append(f"🗑️ 已删除忌口：{', '.join(sorted(rem_dis))}（剩余：{'、'.join(dislikes_new) if dislikes_new else '无'}）。")
+        if rem_all is None and rem_dis is None:
+            parts.append("✅ 未指定要删除的过敏原或忌口，无可删除项。")
+    return "\n".join(parts)
