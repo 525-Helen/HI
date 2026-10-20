@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import time
 
 logger = logging.getLogger("audit")
 
@@ -57,10 +58,14 @@ def _safe_args(args) -> str:
 
 
 def _emit(ev: dict) -> None:
-    """以 JSON 行写入主日志文件；审计失败绝不阻断业务。"""
-    ev.setdefault("ts", int(__import__("time").time() * 1000))
+    """以顶层 JSON 字段写入主日志文件；审计失败绝不阻断业务。
+
+    用 extra= 传入事件字段，使 audit_type/request_id/tool 等成为日志 JSON 的
+    顶层键（而非被包进 message），便于 metrics 直接 json.loads 解析。
+    """
+    ev.setdefault("ts", int(time.time() * 1000))
     try:
-        logger.info("%s", json.dumps(ev, ensure_ascii=False, default=str))
+        logger.info("AUDIT_EVENT", extra=dict(ev))
     except Exception:  # noqa: BLE001
         pass
 
