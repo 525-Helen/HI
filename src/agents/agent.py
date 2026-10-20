@@ -58,8 +58,10 @@ def audit_tool_calls(request, handler):
     start = time.time()
     try:
         res = handler(request)
+        _resp = getattr(res, "content", "") if res is not None else ""
         record_tool_call(rid, tool_name, tool_args,
-                         duration_ms=(time.time() - start) * 1000, ok=True)
+                         duration_ms=(time.time() - start) * 1000, ok=True,
+                         response=_resp)
         return res
     except Exception as e:  # noqa: BLE001
         record_tool_call(rid, tool_name, tool_args,

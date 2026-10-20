@@ -57,6 +57,15 @@ def _safe_args(args) -> str:
     return s[:800]
 
 
+def _safe_resp(resp) -> str:
+    """工具返回内容摘要化（截断），用于审计原始结果。"""
+    try:
+        s = str(resp)
+    except Exception:  # noqa: BLE001
+        s = "<unserializable>"
+    return s[:600]
+
+
 def _emit(ev: dict) -> None:
     """以顶层 JSON 字段写入主日志文件；审计失败绝不阻断业务。
 
@@ -70,8 +79,13 @@ def _emit(ev: dict) -> None:
         pass
 
 
-def record_tool_call(request_id, tool, args=None, duration_ms=0.0, ok=True, error_type=""):
-    """记录一次工具调用（含参数、耗时、错误类型）。"""
+def record_tool_call(request_id, tool, args=None, duration_ms=0.0, ok=True, error_type="", response=""):
+    """记录一次工具调用（含参数、耗时、错误类型与原始返回摘要）。
+
+    - args：调用入参（含 meal_date 等字段，随 tool 不同而不同）
+    - response：工具返回内容摘要；save_meal_record 的响应含 created/duplicate/落库日期，
+      可用于统计 save_count 与核对落库日期。
+    """
     _emit({
         "audit_type": "tool_call",
         "request_id": str(request_id or ""),
@@ -81,6 +95,7 @@ def record_tool_call(request_id, tool, args=None, duration_ms=0.0, ok=True, erro
         "duration_ms": round(float(duration_ms or 0), 2),
         "ok": bool(ok),
         "error_type": str(error_type or ("ok" if ok else "ERROR")),
+        "tool_response": _safe_resp(response) if response not in (None, "") else "",
     })
 
 
@@ -144,6 +159,9 @@ def compute_metrics(last_lines: int = 3000) -> dict:
 
     by_tool: dict = {}
     by_error: dict = {}
+    # save_count：保存记录（save_meal_record）的调用次数与成功入账(created=true)次数
+    save_attempts = 0
+    created_saves = 0
     for e in events:
         t = e.get("tool") or "unknown"
         b = by_tool.setdefault(t, {"calls": 0, "failed": 0, "duration_ms": 0.0})
@@ -153,6 +171,10 @@ def compute_metrics(last_lines: int = 3000) -> dict:
             b["failed"] += 1
             err = e.get("error_type") or "ERROR"
             by_error[err] = by_error.get(err, 0) + 1
+        if t == "save_meal_record":
+            save_attempts += 1
+            if re.search(r'"created"\s*:\s*true', e.get("tool_response") or ""):
+                created_saves += 1
 
     return {
         "tool_calls_total": tool_calls_total,
@@ -161,6 +183,11 @@ def compute_metrics(last_lines: int = 3000) -> dict:
         "avg_tool_duration_ms": avg_tool_duration_ms,
         "avg_request_duration_ms": avg_request_duration_ms,
         "requests_count": len(req_agg),
+        "save_count": {
+            "save_attempts": save_attempts,
+            "created_saves": created_saves,
+            "note": "created_saves 由 save_meal_record 响应中的 created=true 统计，即实际新增入账数；duplicate 属于幂等未新增。",
+        },
         "by_tool": by_tool,
         "by_error": by_error,
         "usage": {
@@ -169,5 +196,5 @@ def compute_metrics(last_lines: int = 3000) -> dict:
             "status": "not_connected",
             "note": "Token 消耗与调用成本未接入：需在模型网关层采集计费/UsageMetadata，agents 层当前不采集。",
         },
-        "note": "avg_request_duration_ms 为请求内全部工具处理段耗时之和（不含纯 LLM 生成段）。接口级端到端响应时间需网关层计时，当前未接入。",
+        "note": "avg_request_duration_ms 为请求内全部工具处理段耗时之和（不含纯 LLM 生成段）。接口级端到端响应时间需网关层计时，当前未接入。meal_date 与落库日期见于 save_meal_record 的 tool_args / tool_response；原始工具结果见各事件 tool_response。",
     }
