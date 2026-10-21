@@ -17,7 +17,7 @@ from postgrest.exceptions import APIError
 from storage.database.supabase_client import get_supabase_client
 from coze_coding_utils.log.write_log import request_context
 from coze_coding_utils.runtime_ctx.context import new_context
-from tools.request_id import get_or_create_request_id
+from tools.request_id import get_or_create_request_id, get_current_user as _active_uid
 from tools.request_date import set_resolved_date, set_ambiguous
 
 PROFILE_KEY = "default"
@@ -222,12 +222,12 @@ def _read_profile(client) -> dict:
 
 
 def _read_preference(client) -> dict:
-    """读取已保存的过敏原/忌口偏好（user_preference，单用户模式）。"""
+    """读取已保存的过敏原/忌口偏好（user_preference）。"""
     try:
         response = (
             client.table(PREF_TABLE)
             .select("allergens, dislikes")
-            .eq("user_id", PROFILE_KEY)
+            .eq("user_id", _active_uid() or PROFILE_KEY)
             .maybe_single()
             .execute()
         )

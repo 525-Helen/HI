@@ -15,6 +15,7 @@ from postgrest.exceptions import APIError
 from storage.database.supabase_client import get_supabase_client
 from coze_coding_utils.log.write_log import request_context
 from coze_coding_utils.runtime_ctx.context import new_context
+from tools.request_id import get_or_create_request_id, get_current_user as _active_uid
 
 PROFILE_KEY = "default"
 TABLE = "user_profiles"
@@ -105,12 +106,12 @@ def _read_existing_profile(client) -> dict:
 
 
 def _read_preference(client) -> dict:
-    """读取已保存的过敏原/忌口偏好（user_preference，单用户模式）。"""
+    """读取已保存的过敏原/忌口偏好（user_preference）。"""
     try:
         response = (
             client.table(PREF_TABLE)
             .select("allergens, dislikes")
-            .eq("user_id", PROFILE_KEY)
+            .eq("user_id", _active_uid() or PROFILE_KEY)
             .maybe_single()
             .execute()
         )
@@ -219,7 +220,7 @@ def save_user_profile(
 
     # 2) 写 user_preference（过敏原 + 忌口 + 目标）
     pref_row = {
-        "user_id": PROFILE_KEY,
+        "user_id": _active_uid() or PROFILE_KEY,
         "allergens": json.dumps(allergens, ensure_ascii=False) if allergens else "[]",
         "dislikes": json.dumps(dislikes, ensure_ascii=False) if dislikes else "[]",
         "goal_type": goal,
@@ -369,7 +370,7 @@ def delete_user_profile(clear: bool = False, allergens: Optional[str] = None, di
             dislikes_new = dislikes_now
 
     pref_row = {
-        "user_id": PROFILE_KEY,
+        "user_id": _active_uid() or PROFILE_KEY,
         "allergens": json.dumps(allergens_new, ensure_ascii=False) if allergens_new else "[]",
         "dislikes": json.dumps(dislikes_new, ensure_ascii=False) if dislikes_new else "[]",
         "goal_type": goal_now,
@@ -386,7 +387,7 @@ def delete_user_profile(clear: bool = False, allergens: Optional[str] = None, di
     if clear:
         # attempt to clear preference row entirely
         try:
-            client.table(PREF_TABLE).delete().eq("user_id", PROFILE_KEY).execute()
+            client.table(PREF_TABLE).delete().eq("user_id", _active_uid() or PROFILE_KEY).execute()
         except Exception:  # noqa: BLE001
             pass
         parts.append("🗑️ 已清空过敏原与忌口档案。")

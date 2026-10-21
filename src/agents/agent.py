@@ -9,7 +9,7 @@ import time
 from typing import Annotated
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.middleware import AgentMiddleware
 from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
@@ -45,32 +45,64 @@ def _tc_field(tc, key, default=None):
     return getattr(tc, key, default)
 
 
-@wrap_tool_call
-def audit_tool_calls(request, handler):
+class AuditLogMiddleware(AgentMiddleware):
     """请求级审计中间件：记录每次工具调用（工具名、参数、耗时、错误类型）。
 
-    仅在代理的工具执行外围追加结构化审计，绝不影响工具返回值与业务逻辑。
+    同时实现同步 wrap_tool_call 与异步 awrap_tool_call，故在 invoke 与 ainvoke
+    （含 HTTP /run、/stream_run）两条路径都可用。仅在外围追加结构化审计，
+    工具成功时原样返回结果；失败时返回带错误的 ToolMessage，不阻断 agent 循环，
+    也不改变业务规则。
     """
-    tc = getattr(request, "tool_call", None) or {}
-    tool_name = _tc_field(tc, "name", "")
-    tool_args = _tc_field(tc, "args", {})
-    rid = get_or_create_request_id()
-    start = time.time()
-    try:
-        res = handler(request)
-        _resp = getattr(res, "content", "") if res is not None else ""
-        record_tool_call(rid, tool_name, tool_args,
-                         duration_ms=(time.time() - start) * 1000, ok=True,
-                         response=_resp)
-        return res
-    except Exception as e:  # noqa: BLE001
-        record_tool_call(rid, tool_name, tool_args,
-                         duration_ms=(time.time() - start) * 1000, ok=False,
-                         error_type=type(e).__name__)
-        return ToolMessage(
-            content=f"Tool execute error: ({str(e)})",
-            tool_call_id=_tc_field(tc, "id", ""),
-        )
+
+    @staticmethod
+    def _content(res) -> str:
+        if res is None:
+            return ""
+        c = getattr(res, "content", "")
+        if c is None:
+            return ""
+        return c if isinstance(c, str) else str(c)
+
+    def _log(self, request, ok, dur_ms, err_type="", response=""):
+        try:
+            tc = getattr(request, "tool_call", None) or {}
+            name = _tc_field(tc, "name", "")
+            args = _tc_field(tc, "args", {})
+            rid = get_or_create_request_id()
+            record_tool_call(rid, name, args, duration_ms=dur_ms, ok=ok,
+                             error_type=err_type, response=response[:600])
+        except Exception:  # 审计绝不能影响业务
+            pass
+
+    def _apply(self, request, handler, resp_factory):
+        start = time.time()
+        try:
+            res = handler(request)
+            self._log(request, True, (time.time() - start) * 1000, response=self._content(res))
+            return res
+        except Exception as e:  # noqa: BLE001
+            self._log(request, False, (time.time() - start) * 1000,
+                      err_type=type(e).__name__)
+            return resp_factory(str(e))
+
+    def wrap_tool_call(self, request, handler):
+        return self._apply(request, handler, lambda msg: ToolMessage(
+            content=f"Tool execute error: ({msg})",
+            tool_call_id=_tc_field(getattr(request, "tool_call", None) or {}, "id", ""),
+        ))
+
+    async def awrap_tool_call(self, request, handler):
+        start = time.time()
+        try:
+            res = await handler(request)
+            self._log(request, True, (time.time() - start) * 1000, response=self._content(res))
+            return res
+        except Exception as e:  # noqa: BLE001
+            self._log(request, False, (time.time() - start) * 1000, err_type=type(e).__name__)
+            return ToolMessage(
+                content=f"Tool execute error: ({str(e)})",
+                tool_call_id=_tc_field(getattr(request, "tool_call", None) or {}, "id", ""),
+            )
 
 
 def build_agent(ctx=None):
@@ -113,7 +145,7 @@ def build_agent(ctx=None):
         model=llm,
         system_prompt=cfg.get("sp"),
         tools=tools,
-        middleware=[audit_tool_calls],
+        middleware=[AuditLogMiddleware()],
         checkpointer=get_memory_saver(),
         state_schema=AgentState,
     )

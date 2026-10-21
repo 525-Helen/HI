@@ -14,7 +14,7 @@ from postgrest.exceptions import APIError
 from storage.database.supabase_client import get_supabase_client
 from coze_coding_utils.log.write_log import request_context
 from coze_coding_utils.runtime_ctx.context import new_context
-from tools.request_id import get_or_create_request_id
+from tools.request_id import get_or_create_request_id, get_current_user
 
 MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
 
@@ -139,6 +139,10 @@ def save_meal_record(
         "food_items": validated_items if validated_items else [{"name": "其他", "calories": int(calories)}],
         "notes": notes,
     }
+    # 多用户隔离：网页端显式声明当前用户时，记录归属到该用户；否则保持全局行为。
+    _uid = get_current_user()
+    if _uid:
+        row["user_id"] = _uid
     if idempotency_key:
         row["request_id"] = idempotency_key
 
@@ -215,13 +219,12 @@ def get_daily_intake(meal_date: str) -> str:
     meal_date = resolved
 
     try:
-        response = (
-            client.table(TABLE)
-            .select("meal_type, calories, food_items, notes, created_at")
-            .eq("meal_date", meal_date)
-            .order("created_at")
-            .execute()
-        )
+        query = client.table(TABLE).select("meal_type, calories, food_items, notes, created_at")
+        _uid = get_current_user()
+        _q = query.eq("meal_date", meal_date)
+        if _uid:
+            _q = _q.eq("user_id", _uid)
+        response = _q.order("created_at").execute()
     except APIError as e:
         raise Exception(f"查询失败: {e.message}")
     except Exception as e:
