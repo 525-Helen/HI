@@ -658,8 +658,11 @@ def _load_ui_html() -> str:
 @app.get("/", include_in_schema=False)
 @app.get("/ui", include_in_schema=False)
 async def serve_ui():
-    """提供「三餐卡路里管家」的网页聊天界面。"""
-    return HTMLResponse(content=_load_ui_html())
+    """提供「AI个性化饮食管理 Agent」的网页聊天界面。"""
+    return HTMLResponse(
+        content=_load_ui_html(),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Start FastAPI server")
