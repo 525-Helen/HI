@@ -13,6 +13,7 @@ import uvicorn
 import time
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
@@ -288,6 +289,24 @@ async def lifespan(app: FastAPI):
         await async_runtime.shutdown()
 
 app = FastAPI(lifespan=lifespan)
+
+# CORS 配置：允许自定义外部前端网页跨域调用 /run
+# 明确列出允许的来源；allow_headers 覆盖 Content-Type 与自定义头 x-user-id / x-run-id
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://ai-diet-agent-prototype-cxy.goodhare128.chatgpt.site",
+        # 兼容本地开发 / 平台域名
+        "http://127.0.0.1:5000",
+        "http://localhost:5000",
+        "https://949a3887-2c31-47e1-8fe2-c4dfdabc17db.dev.coze.site",
+    ],
+    allow_origin_regex=r"https://.*\.coze\.site",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    max_age=86400,
+)
 
 # OpenAI 兼容接口处理器
 openai_handler = OpenAIChatHandler(service)
