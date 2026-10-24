@@ -301,7 +301,7 @@ app.add_middleware(
         "http://localhost:5000",
         "https://949a3887-2c31-47e1-8fe2-c4dfdabc17db.dev.coze.site",
     ],
-    allow_origin_regex=r"https://.*\.coze\.site",
+    allow_origin_regex=r"https://.*\.(coze\.site|coze\.cn)",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
