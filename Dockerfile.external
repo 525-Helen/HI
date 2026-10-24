@@ -1,5 +1,6 @@
 # AI个性化饮食管理 Agent —— 外部常驻主机镜像（路线 B）
 # 仅打包精简外部入口（external_main.py），不含平台版 main.py 的 Coze 专属运行时依赖链。
+# 通过 src_external/ 兼容 shim 提供 coze_coding_utils 的最小等价实现。
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -16,18 +17,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 依赖
-COPY pyproject.toml uv.lock ./
+# Python 依赖 —— 完整覆盖 external_main 全链路所需（agent + tools + storage）
+# 不安装 Coze 专属库（coze-coding-utils / coze-coding-dev-sdk / cozeloop），由 src_external shim 承担。
 RUN pip install --upgrade pip && pip install \
     "uvicorn[standard]" \
     "fastapi" \
-    "pydantic" \
-    "langchain" "langchain-openai" "langchain-core" \
-    "langgraph" \
-    "supabase" \
-    "openai" \
+    "pydantic>=2.12,<3" \
+    "httpx" \
     "python-dotenv" \
-    "httpx"
+    "langchain>=1.0.3,<2" \
+    "langchain-core>=1.0,<2" \
+    "langchain-openai>=1.0.1,<2" \
+    "langgraph>=1.0.2,<2" \
+    "langgraph-checkpoint>=3.0,<4" \
+    "langgraph-checkpoint-postgres>=3.0,<4" \
+    "langgraph-sdk>=0.2,<1" \
+    "langsmith>=0.4,<1" \
+    "openai" \
+    "supabase" \
+    "psycopg[binary]>=3.3,<4" \
+    "psycopg-pool>=3.3,<4" \
+    "SQLAlchemy>=2.0,<3" \
+    "boto3>=1.40,<2" \
+    "alembic>=1.16,<2"
 
 # 应用源码与资源（COZE_WORKSPACE_PATH=/app，代码用相对 /app 定位 config/assets）
 COPY src/ ./src/
