@@ -16,6 +16,7 @@
 import json
 import logging
 import os
+import sys
 import uuid
 
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,17 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.memory import MemorySaver
+
+# --- 外部模式引导：在导入业务代码前，将外部兼容 shim 置于 sys.path 最前 ---
+# 外部主机没有 Coze 平台库(coze_coding_utils 等)，用 src_external/ 的自实现替代；
+# 设置 EXTERNAL_MODE=1 才启用，否则不影响沙箱/平台版（保持真实库优先）。
+_EXTERNAL_MODE = os.getenv("EXTERNAL_MODE", "1") == "1"
+if _EXTERNAL_MODE:
+    _here = os.path.dirname(os.path.abspath(__file__))          # .../src
+    _root = os.path.dirname(_here)                              # 项目根
+    _shim = os.path.join(_root, "src_external")
+    if os.path.isdir(_shim) and _shim not in sys.path:
+        sys.path.insert(0, _shim)  # 让 src_external/coze_coding_utils 优先可导入
 
 from agents.agent import build_agent
 from tools.request_id import set_request_id, set_current_user

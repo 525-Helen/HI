@@ -6,7 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     COZE_WORKSPACE_PATH=/app \
-    PYTHONPATH=/app/src
+    PYTHONPATH=/app/src:/app/src_external \
+    EXTERNAL_MODE=1
 
 WORKDIR /app
 
@@ -30,6 +31,7 @@ RUN pip install --upgrade pip && pip install \
 
 # 应用源码与资源（COZE_WORKSPACE_PATH=/app，代码用相对 /app 定位 config/assets）
 COPY src/ ./src/
+COPY src_external/ ./src_external/
 COPY assets/ ./assets/
 COPY config/ ./config/
 
