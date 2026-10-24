@@ -439,7 +439,7 @@ function sendToAgent(text, textarea){
   tp.innerHTML='<div class="bubble">正在为您计算…</div>'; chat.appendChild(tp); chat.scrollTop=chat.scrollHeight;
 
   var ctrl=new AbortController();
-  var timer=setTimeout(function(){ ctrl.abort(); }, 60000); /* 超时60s */
+  var timer=setTimeout(function(){ ctrl.abort(); }, 180000); /* 超时180s，兼容慢速外部LLM多轮调用 */
 
   function showErr(msg){ tp.remove(); var e=document.getElementById('chatErr'); e.textContent=msg; e.style.display='block'; setTimeout(function(){e.style.display='none';},6000); }
 
