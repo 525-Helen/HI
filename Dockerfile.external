@@ -1,0 +1,42 @@
+# AI个性化饮食管理 Agent —— 外部常驻主机镜像（路线 B）
+# 仅打包精简外部入口（external_main.py），不含平台版 main.py 的 Coze 专属运行时依赖链。
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    COZE_WORKSPACE_PATH=/app \
+    PYTHONPATH=/app/src
+
+WORKDIR /app
+
+# 系统依赖（最小化，curl 用于健康检查）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 依赖
+COPY pyproject.toml uv.lock ./
+RUN pip install --upgrade pip && pip install \
+    "uvicorn[standard]" \
+    "fastapi" \
+    "pydantic" \
+    "langchain" "langchain-openai" "langchain-core" \
+    "langgraph" \
+    "supabase" \
+    "openai" \
+    "python-dotenv" \
+    "httpx"
+
+# 应用源码与资源（COZE_WORKSPACE_PATH=/app，代码用相对 /app 定位 config/assets）
+COPY src/ ./src/
+COPY assets/ ./assets/
+COPY config/ ./config/
+
+# 健康检查（Render 会周期性调用；监听全端口）
+EXPOSE 7860
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -fsS http://localhost:${PORT:-7860}/health || exit 1
+
+# 外部入口：监听 ${PORT:-7860}（Render 自动注入 PORT；本地默认 7860）
+CMD ["sh", "-c", "exec uvicorn external_main:app --host 0.0.0.0 --port ${PORT:-7860}"]

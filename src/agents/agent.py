@@ -105,30 +105,55 @@ class AuditLogMiddleware(AgentMiddleware):
             )
 
 
-def build_agent(ctx=None):
+def _resolve_llm(cfg: dict):
+    """解析模型调用配置。
+
+    优先使用外部可访问的 LLM（供自包含外部部署），并兼容 Coze 内网接入点：
+    - 设置 EXTERNAL_OPENAI_BASE_URL + EXTERNAL_OPENAI_API_KEY + EXTERNAL_OPENAI_MODEL
+      时，走外部 OpenAI 兼容端点（如 llmapi.paratera.com），仅当三者同时满足才切换。
+    - 否则回退到 Coze 内网接入点（integration.coze.cn + workload identity）。
+    返回 (llm_kwargs, is_external)。
+    """
+    ext_base = os.getenv("EXTERNAL_OPENAI_BASE_URL")
+    ext_key = os.getenv("EXTERNAL_OPENAI_API_KEY")
+    ext_model = os.getenv("EXTERNAL_OPENAI_MODEL")
+    if ext_base and ext_key and ext_model:
+        return {
+            "model": ext_model,
+            "api_key": ext_key,
+            "base_url": ext_base,
+            "temperature": float(cfg["config"].get("temperature", 0.6)),
+            "streaming": True,
+            "timeout": int(cfg["config"].get("timeout", 600)),
+            # 外部端点多数非 DeepSeek thinking，不传 extra_body，避免 400
+        }, True
+    return {
+        "model": cfg["config"].get("model"),
+        "api_key": os.getenv("COZE_WORKLOAD_IDENTITY_API_KEY"),
+        "base_url": os.getenv("COZE_INTEGRATION_MODEL_BASE_URL"),
+        "temperature": float(cfg["config"].get("temperature", 0.6)),
+        "streaming": True,
+        "timeout": int(cfg["config"].get("timeout", 600)),
+        "extra_body": {
+            "thinking": {
+                "type": cfg["config"].get("thinking", "disabled")
+            }
+        },
+    }, False
+
+
+def build_agent(ctx=None, checkpointer=None):
     workspace_path = os.getenv("COZE_WORKSPACE_PATH", "/workspace/projects")
     config_path = os.path.join(workspace_path, LLM_CONFIG)
 
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    api_key = os.getenv("COZE_WORKLOAD_IDENTITY_API_KEY")
-    base_url = os.getenv("COZE_INTEGRATION_MODEL_BASE_URL")
+    llm_kwargs, is_external = _resolve_llm(cfg)
+    if not is_external:
+        llm_kwargs["default_headers"] = default_headers(ctx) if ctx else {}
 
-    llm = ChatOpenAI(
-        model=cfg["config"].get("model"),
-        api_key=api_key,
-        base_url=base_url,
-        temperature=cfg["config"].get("temperature", 0.6),
-        streaming=True,
-        timeout=cfg["config"].get("timeout", 600),
-        extra_body={
-            "thinking": {
-                "type": cfg["config"].get("thinking", "disabled")
-            }
-        },
-        default_headers=default_headers(ctx) if ctx else {},
-    )
+    llm = ChatOpenAI(**llm_kwargs)
 
     tools = [
         save_meal_record,
@@ -141,11 +166,14 @@ def build_agent(ctx=None):
         diet_nutrition_agent,
     ]
 
+    # 外部主机部署可用内存 checkpointer（外部入口传入），避免 PostgresSaver 事件循环绑定问题
+    cp = checkpointer if checkpointer is not None else get_memory_saver()
+
     return create_agent(
         model=llm,
         system_prompt=cfg.get("sp"),
         tools=tools,
         middleware=[AuditLogMiddleware()],
-        checkpointer=get_memory_saver(),
+        checkpointer=cp,
         state_schema=AgentState,
     )

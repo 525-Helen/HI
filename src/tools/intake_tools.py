@@ -47,7 +47,25 @@ def knowledge_search(query: str, top_k: int = 5) -> str:
     若知识库无匹配结果，answer 为"根据现有资料，我无法提供确切答案"。
     """
     ctx = _get_ctx()
-    from coze_coding_dev_sdk import Config, KnowledgeClient
+    # 外部自包含部署（EXTERNAL_KNOWLEDGE_DISABLED=1）时无 Coze 托管知识库，
+    # 降级为使用大模型通用营养常识回答（无来源引文），不阻断对话。
+    if os.getenv("EXTERNAL_KNOWLEDGE_DISABLED") == "1":
+        return json.dumps({
+            "answer": "",
+            "sources": [],
+            "fallback": "external",
+        }, ensure_ascii=False)
+
+    try:
+        from coze_coding_dev_sdk import Config, KnowledgeClient
+    except Exception as e:  # noqa: BLE001
+        # SDK 不可用时同样降级为通用常识，避免工具直接失败
+        return json.dumps({
+            "answer": "",
+            "sources": [],
+            "fallback": "external",
+            "error": str(e),
+        }, ensure_ascii=False)
 
     client = KnowledgeClient(config=Config(), ctx=ctx)
     try:
@@ -59,8 +77,9 @@ def knowledge_search(query: str, top_k: int = 5) -> str:
         )
     except Exception as e:  # noqa: BLE001
         return json.dumps({
-            "answer": "知识库检索失败，请稍后再试。",
+            "answer": "",
             "sources": [],
+            "fallback": "external",
             "error": str(e),
         }, ensure_ascii=False)
 
