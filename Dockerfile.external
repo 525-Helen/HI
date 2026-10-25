@@ -19,7 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Python 依赖 —— 完整覆盖 external_main 全链路所需（agent + tools + storage）
 # 不安装 Coze 专属库（coze-coding-utils / coze-coding-dev-sdk / cozeloop），由 src_external shim 承担。
+# PIP_INDEX_URL 支持国内 VPS 用清华/阿里镜像加速构建（默认清华源，海外可传 --build-arg 覆盖）
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_EXTRA_INDEX_URL=
 RUN pip install --upgrade pip && pip install \
+    --index-url "$PIP_INDEX_URL" ${PIP_EXTRA_INDEX_URL:+--extra-index-url "$PIP_EXTRA_INDEX_URL"} \
     "uvicorn[standard]" \
     "fastapi" \
     "pydantic>=2.12,<3" \
