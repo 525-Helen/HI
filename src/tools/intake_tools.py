@@ -1,0 +1,273 @@
+"""知识库检索与营养确定性计算工具。
+
+提供两个能力：
+- knowledge_search：从 nutrition_kb 知识库做混合语义检索，回答营养/饮食知识类问题
+- diet_nutrition_agent：基于营养库对一餐做确定性热量与宏量营养计算（读取用户档案）
+"""
+import json
+import os
+import subprocess
+import sys
+import datetime
+from typing import Optional, cast
+
+from langchain.tools import tool
+from postgrest.exceptions import APIError
+
+from storage.database.supabase_client import get_supabase_client
+from coze_coding_utils.log.write_log import request_context
+from coze_coding_utils.runtime_ctx.context import new_context
+from tools.request_id import get_or_create_request_id, get_current_user as _active_uid
+from tools.request_date import set_resolved_date, set_ambiguous
+
+PROFILE_KEY = "default"
+PROFILE_TABLE = "user_profiles"
+PREF_TABLE = "user_preference"
+KB_DATASET = "nutrition_kb"
+
+# 用户档案 goal 值 -> 营养计算脚本 goal 值
+GOAL_MAP = {"lose_fat": "lose", "fitness": "gain", "normal": "maintain"}
+
+
+def _get_ctx():
+    """获取请求上下文，保持链路透传。"""
+    return request_context.get() or new_context(method="intake_tools")
+
+
+@tool
+def knowledge_search(query: str, top_k: int = 5) -> str:
+    """从「nutrition_kb」营养知识库进行语义检索，回答营养知识、饮食建议、膳食指南类问题。
+
+    当用户询问营养知识、饮食建议、膳食指南等非"记录用餐"类问题时调用。
+    例如："减脂期晚餐怎么吃""蛋白质吃多少合适""哪些食物饱腹感强"。
+    参数：
+    - query：用户的问题或想要检索的关键词
+    - top_k：返回相关条数，默认 5
+    返回：JSON 字符串，包含 answer（基于知识库的答案内容或"无确切答案"提示）与 sources（引用来源列表）。
+    若知识库无匹配结果，answer 为"根据现有资料，我无法提供确切答案"。
+    """
+    ctx = _get_ctx()
+    # 外部自包含部署（EXTERNAL_KNOWLEDGE_DISABLED=1）时无 Coze 托管知识库，
+    # 降级为使用大模型通用营养常识回答（无来源引文），不阻断对话。
+    if os.getenv("EXTERNAL_KNOWLEDGE_DISABLED") == "1":
+        return json.dumps({
+            "answer": "",
+            "sources": [],
+            "fallback": "external",
+        }, ensure_ascii=False)
+
+    try:
+        from coze_coding_dev_sdk import Config, KnowledgeClient
+    except Exception as e:  # noqa: BLE001
+        # SDK 不可用时同样降级为通用常识，避免工具直接失败
+        return json.dumps({
+            "answer": "",
+            "sources": [],
+            "fallback": "external",
+            "error": str(e),
+        }, ensure_ascii=False)
+
+    client = KnowledgeClient(config=Config(), ctx=ctx)
+    try:
+        resp = client.search(
+            query=query,
+            table_names=[KB_DATASET],
+            top_k=int(top_k),
+            min_score=0.5,
+        )
+    except Exception as e:  # noqa: BLE001
+        return json.dumps({
+            "answer": "",
+            "sources": [],
+            "fallback": "external",
+            "error": str(e),
+        }, ensure_ascii=False)
+
+    chunks = list(resp.chunks)
+    if resp.code != 0 or not chunks:
+        return json.dumps({
+            "answer": "根据现有资料，我无法提供确切答案",
+            "sources": [],
+        }, ensure_ascii=False)
+
+    answer = "\n".join(f"- {c.content}" for c in chunks[:top_k])
+    sources = [
+        {"doc_id": c.doc_id, "score": round(float(c.score), 4)}
+        for c in chunks[:top_k]
+    ]
+    return json.dumps({
+        "answer": answer,
+        "sources": sources,
+    }, ensure_ascii=False)
+
+
+@tool
+def diet_nutrition_agent(foods: Optional[str] = None, consumed_calories: Optional[int] = None, meal_date: Optional[str] = None) -> str:
+    """对饮食做确定性的热量与宏量营养计算，可算"某一餐"或"当日累计剩余"。
+
+    适用于两类场景：
+    A. 用户记录/询问"某餐吃了什么" → 传入 foods（结构化食物明细 JSON 字符串）：
+       '[{"food":"米饭","grams":200,"confidence":0.95},{"food":"鸡胸肉","grams":150,"confidence":0.9}]'
+       份量取值遵循"精准优先、估算兜底"三级逻辑，foods 每个元素可按需带以下字段：
+       - grams：明确克数（如 200）。一旦给出明确克数，将直接计算，不再查生活化映射。
+       - portion_desc：用户用生活化描述回答份量（如"普通碗，八分满""一个掌心大小"）。填入原文，函数会映射为克数（confidence≈0.6）后计算。
+       - portion_state：当用户明确表示"不知道/不清楚/没称过"时填 "unknown"（触发参照物估算引导）；再次确认后仍说"不知道/不确定"时填 "unknown_still"（按普通份量默认值估算，confidence≈0.4 并附±20%误差提示）。
+       若既无明确克数、又无 portion_desc/portion_state，且食物名带有模糊单位（碗/盘/块/份等），将返回 needs_clarification=true（clarification_type=grams），此时【绝不能】输出热量数字，只能追问克数。
+    B. 用户给出"今日已累计摄入热量"（如"我今天吃了1500大卡，晚餐怎么补"）→ 只传 consumed_calories，
+       函数会结合用户档案返回每日目标和剩余缺口 remaining_calories。
+
+    参数 meal_date（可选）：用户描述用餐时间所用的相对日期文本（如"昨天""上周三""三天前"）。
+    传入后函数会将其解析为具体日期 YYYY-MM-DD，解析成功则写入返回 JSON 的 meal_date 字段
+    （后续保存记录时应使用该日期）；解析失败则返回 meal_date: null，此时应追问用户具体日期。
+
+    函数会读取用户已保存档案（身高/体重/年龄/性别/活动水平/目标）作为计算口径；未保存则用默认值（30岁/男/170cm/65kg/light/maintain）。
+    返回：JSON 字符串，含热量(calories)、宏量(protein/carb/fat)、目标(target_*)、剩余热量(remaining_calories)、
+    完成度(pct_consumed)、是否需要澄清(needs_clarification)、澄清类型(clarification_type: none/grams/estimate)、
+    安全预警(risk_flags)、逐项明细(items)与解析后的用餐日期(meal_date)。
+    场景 A 时 calories 为本餐热量；场景 B 时 calories 为已累计热量、remaining_calories = target_calories - consumed_calories。
+    """
+    _get_ctx()
+    client = get_supabase_client()
+
+    profile = _read_profile(client)
+    preference = _read_preference(client)
+    allergens = preference.get("allergens", [])
+    dislikes = preference.get("dislikes", [])
+
+    # 相对日期仅在计算端解析一次，作为全请求的权威用餐日期，写入请求级上下文供保存端复用。
+    # 指代不明日期（那天/某天等）不得臆测，返回 meal_date=null 并标记 ambiguous，需追问确认。
+    from tools.date_parser import parse_relative_date, is_ambiguous_date
+    resolved_date: Optional[str] = None
+    if meal_date:
+        if is_ambiguous_date(meal_date):
+            set_ambiguous(True)
+            resolved_date = None
+        else:
+            resolved_date = parse_relative_date(meal_date)
+    else:
+        # 未提及日期 → 视为当天
+        resolved_date = datetime.date.today().isoformat()
+    # 写入请求级日期上下文：diet 与 save 全程复用同一权威日期，保存端禁止二次解析。
+    set_resolved_date(resolved_date)
+
+    # 解析 foods（可空）：场景 B 时 foods 为空列表
+    items: list = []
+    if foods:
+        try:
+            parsed = json.loads(foods)
+            if not isinstance(parsed, list):
+                return json.dumps({"status": "error", "message": "foods 参数必须是 JSON 数组"}, ensure_ascii=False)
+            items = parsed
+            for it in items:
+                it.setdefault("confidence", 1.0)
+        except Exception as e:  # noqa: BLE001
+            return json.dumps({"status": "error", "message": f"foods 参数解析失败: {e}"}, ensure_ascii=False)
+
+    script = os.path.join(os.getenv("COZE_WORKSPACE_PATH", "/workspace/projects"), "src/tools/nutrition_calc.py")
+    cmd = [
+        sys.executable, script,
+        "--foods", json.dumps(items, ensure_ascii=False),
+        "--age", str(profile.get("age", 30)),
+        "--gender", str(profile.get("gender", "male")),
+        "--height", str(profile.get("height_cm", 170)),
+        "--weight", str(profile.get("weight_kg", 65)),
+        "--activity", str(profile.get("activity_level", "light")),
+        "--goal", GOAL_MAP.get(str(profile.get("goal", "normal")), "maintain"),
+        "--allergens", json.dumps(allergens, ensure_ascii=False),
+        "--dislikes", json.dumps(dislikes, ensure_ascii=False),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        out = result.stdout.strip()
+        if not out:
+            return json.dumps({"status": "error", "message": f"营养计算无输出: {result.stderr[:500]}"}, ensure_ascii=False)
+        trial = out
+        if result.returncode != 0 and not trial.startswith("{"):
+            return json.dumps({"status": "error", "message": trial[:500]}, ensure_ascii=False)
+
+        def _inject_date(payload: str) -> str:
+            """把解析出的用餐日期与本次请求的幂等键注入返回 JSON。
+
+            request_id 为整条用户请求进入工作流时生成一次的唯一标识（来源 request_id 上下文），
+            贯穿意图识别、份量澄清、营养计算、保存与所有重试流程：同一请求内 diet_nutrition_agent
+            或 save_meal_record 重试时复用同一 request_id；用户补充克数/修改份量（新请求）
+            时生成新的 request_id。作为 save_meal_record 的 idempotency_key，
+            避免同一请求重复保存被错误去重或重复入库。
+            """
+            try:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    data["meal_date"] = resolved_date
+                    data["request_id"] = get_or_create_request_id()
+                    return json.dumps(data, ensure_ascii=False)[:4000]
+            except Exception:  # noqa: BLE001
+                pass
+            return payload[:4000]
+
+        # 场景 B：仅给累计热量时，重算剩余缺口
+        if consumed_calories is not None and not items:
+            try:
+                data = json.loads(trial)
+                target = float(data.get("target_calories") or data.get("target") or 0)
+                consumed = float(consumed_calories)
+                data["calories"] = consumed
+                data["remaining_calories"] = round(target - consumed, 1)
+                data["pct_consumed"] = round(consumed / target * 100, 1) if target else 0
+                data["meal_date"] = resolved_date
+                data["request_id"] = get_or_create_request_id()
+                return json.dumps(data, ensure_ascii=False)[:4000]
+            except Exception:  # noqa: BLE001
+                return _inject_date(trial)
+        return _inject_date(trial)
+    except Exception as e:  # noqa: BLE001
+        return json.dumps({"status": "error", "message": f"营养计算执行失败: {e}"}, ensure_ascii=False)
+
+
+def _read_profile(client) -> dict:
+    """读取用户档案，未保存时返回空 dict（由调用方用默认值兜底）。"""
+    try:
+        response = (
+            client.table(PROFILE_TABLE)
+            .select("gender, age, height_cm, weight_kg, activity_level, goal")
+            .eq("user_key", PROFILE_KEY)
+            .maybe_single()
+            .execute()
+        )
+    except APIError:
+        return {}
+    except Exception:  # noqa: BLE001
+        return {}
+    return cast(dict, response.data) if response is not None and response.data else {}
+
+
+def _read_preference(client) -> dict:
+    """读取已保存的过敏原/忌口偏好（user_preference）。"""
+    try:
+        response = (
+            client.table(PREF_TABLE)
+            .select("allergens, dislikes")
+            .eq("user_id", _active_uid() or PROFILE_KEY)
+            .maybe_single()
+            .execute()
+        )
+    except APIError:
+        return {"allergens": [], "dislikes": []}
+    except Exception:  # noqa: BLE001
+        return {"allergens": [], "dislikes": []}
+    data = response.data if response is not None and response.data else {}
+    allergens = data.get("allergens") or []
+    dislikes = data.get("dislikes") or []
+    if isinstance(allergens, str):
+        try:
+            allergens = json.loads(allergens)
+        except Exception:  # noqa: BLE001
+            allergens = []
+    if isinstance(dislikes, str):
+        try:
+            dislikes = json.loads(dislikes)
+        except Exception:  # noqa: BLE001
+            dislikes = []
+    return {
+        "allergens": [str(x) for x in allergens] if isinstance(allergens, list) else [],
+        "dislikes": [str(x) for x in dislikes] if isinstance(dislikes, list) else [],
+    }

@@ -53,3 +53,5 @@ __pycache__/
 
 # CodeGraph index
 .codegraph
+assets/*.png
+assets/image_*.png

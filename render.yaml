@@ -1,0 +1,32 @@
+# AI个性化饮食管理 Agent —— Render Blueprint（路线 B 常驻主机）
+# 用法：把本仓库推到 GitHub，在 Render 选择 Blueprint（或 New Web Service→From Blueprint）创建。
+# 部署后得到稳定 HTTPS 地址：https://<service-name>.onrender.com
+services:
+  - type: web
+    name: ai-diet-agent
+    runtime: docker
+    plan: free                    # 免费计划（有冷启动延迟）；建议 starter 以上获得稳定常驻
+    dockerfilePath: ./Dockerfile.external
+    healthCheckPath: /health
+    envVars:
+      # 外部 OpenAI 兼容 LLM（路线 B 核心）
+      - key: EXTERNAL_OPENAI_BASE_URL
+        value: https://llmapi.paratera.com/v1
+      - key: EXTERNAL_OPENAI_API_KEY
+        sync: false               # 启动时在 Render 面板设置（Secret）
+      - key: EXTERNAL_OPENAI_MODEL
+        value: DeepSeek-V4-Pro-0813
+      # Supabase（Postgres）持久化
+      - key: COZE_SUPABASE_URL
+        value: https://br-neat-shag-65c43f1e.supabase2.aidap-global.cn-beijing.volces.com
+      - key: COZE_SUPABASE_ANON_KEY
+        sync: false               # 在面板设置
+      - key: COZE_SUPABASE_SERVICE_ROLE_KEY
+        sync: false               # 在面板设置
+      # 外部无 Coze 知识库 → 关闭 RAG，退回通用常识回答
+      - key: EXTERNAL_KNOWLEDGE_DISABLED
+        value: "1"
+      # CORS：允许自定义前端跨域；默认 * 放开
+      - key: EXTERNAL_CORS_ORIGINS
+        value: "*"
+      # Render 自动注入 PORT（无需手填）
