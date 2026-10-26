@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#5d8463" />
+<meta name="description" content="卡卡 · AI个性化饮食管理 Agent —— 饮食热量打卡、宏量营养分析、目标管理与安全预警的一站式 AI 营养助手（个人项目作品）" />
+<title>卡卡 · AI 个性化饮食管理 Agent —— 作品集</title>
+<style>
+:root{
+  --green:#7a9e7e; --green-d:#5d8463; --green-dd:#3f6650; --green-l:#e7f0e8; --green-ll:#f2f7f2;
+  --bg:#f4f1e8; --surface:#ffffff; --text:#334033; --muted:#84908a; --line:#e4e6da;
+  --warn:#e07a5f; --warn-l:#fbeae4; --radius:18px; --shadow:0 8px 30px rgba(60,80,60,.10);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+a{color:var(--green-d);text-decoration:none}
+img{max-width:100%;display:block}
+section{scroll-margin-top:70px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+/* ---------- nav ---------- */
+nav{position:fixed;top:0;left:0;right:0;z-index:50;background:rgba(255,255,255,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:1080px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:38px;height:38px;border-radius:12px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800}
+.brand .t{font-size:17px;font-weight:800;color:var(--green-dd)}
+.nav-links{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.nav-links a{padding:8px 12px;border-radius:10px;font-size:14px;font-weight:600;color:var(--text)}
+.nav-links a:hover{background:var(--green-l);color:var(--green-d)}
+.nav-links .gh{background:var(--green);color:#fff;border-radius:10px}
+.nav-links .gh:hover{background:var(--green-d)}
+/* ---------- hero ---------- */
+.hero{background:linear-gradient(160deg,var(--green-ll) 0%,var(--green-l) 60%,#eaf3ec 100%);padding:120px 0 70px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(122,158,126,.18),transparent 70%);top:-160px;right:-120px}
+.hero-in{position:relative;display:flex;align-items:center;gap:48px;max-width:1080px;margin:0 auto;padding:0 20px}
+.hero-l{flex:1.15;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);color:var(--green-d);font-size:13px;font-weight:700;padding:7px 14px;border-radius:30px;margin-bottom:18px;box-shadow:var(--shadow)}
+.badge .dot{width:8px;height:8px;border-radius:50%;background:var(--warn);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+h1{font-size:44px;line-height:1.2;font-weight:900;color:var(--green-dd);letter-spacing:-.5px}
+h1 .hl{color:var(--green-d);position:relative}
+.sub{font-size:17px;color:var(--text);margin:18px 0 8px;max-width:520px}
+.meat{font-size:14px;color:var(--muted);margin-bottom:26px;max-width:520px}
+.cta{display:flex;gap:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:14px;font-size:15px;font-weight:700;border:1.5px solid var(--line);cursor:pointer;transition:.18s}
+.btn-pri{background:var(--green);border-color:var(--green);color:#fff;box-shadow:var(--shadow)}
+.btn-pri:hover{background:var(--green-d)}
+.btn-sec{background:var(--surface);color:var(--green-d)}
+.btn-sec:hover{border-color:var(--green)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:26px}
+.chip{font-size:12.5px;font-weight:700;color:var(--green-dd);background:var(--surface);border:1px solid var(--line);padding:6px 12px;border-radius:20px}
+/* hero phone mock */
+.hero-r{flex:1;min-width:0;display:flex;justify-content:center}
+.phone{width:300px;flex:none;background:#111;border-radius:44px;padding:12px;box-shadow:0 30px 60px rgba(40,70,50,.25);border:1px solid #000}
+.phone-scr{background:var(--bg);border-radius:32px;overflow:hidden;height:560px;display:flex;flex-direction:column}
+.status{display:flex;justify-content:space-between;padding:12px 16px 4px;font-size:11px;font-weight:700;color:var(--text)}
+.ph-head{background:var(--surface);padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+.ph-avatar{width:30px;height:30px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+.ph-name{font-size:13px;font-weight:800}
+.ph-chat{flex:1;padding:14px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.bub{max-width:80%;padding:10px 12px;border-radius:15px;font-size:12.5px;line-height:1.65;box-shadow:0 3px 10px rgba(60,80,60,.08)}
+.bub.ai{background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px;align-self:flex-start}
+.bub.usr{background:var(--green);color:#fff;border-bottom-right-radius:5px;align-self:flex-end}
+.bub .b{font-weight:800}
+.bub .w{color:var(--warn);font-weight:700}
+.ph-input{background:var(--surface);margin:0 12px 12px;border:1.5px solid var(--line);border-radius:24px;padding:10px 14px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+.ph-input .send{width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+/* ---------- stats ---------- */
+.stats{background:var(--green-dd);color:#fff;padding:34px 0}
+.stats-in{max-width:1080px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:20px;text-align:center}
+.stat b{display:block;font-size:30px;font-weight:900;letter-spacing:-.5px}
+.stat span{font-size:13px;opacity:.85}
+/* ---------- sections ---------- */
+.sec{padding:70px 0}
+.sec-alt{background:#fff}
+.sec-h{text-align:center;max-width:640px;margin:0 auto 44px}
+.sec-h .tag{display:inline-block;font-size:12.5px;font-weight:800;color:var(--green-d);background:var(--green-l);padding:6px 14px;border-radius:20px;margin-bottom:14px;letter-spacing:.5px}
+.sec-h h2{font-size:32px;font-weight:900;color:var(--green-dd);margin-bottom:10px}
+.sec-h p{color:var(--muted);font-size:15px}
+/* features grid */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px 24px;transition:.2s;box-shadow:0 4px 16px rgba(60,80,60,.06)}
+.card:hover{transform:translateY(-4px);box-shadow:var(--shadow);border-color:var(--green)}
+.ic{width:46px;height:46px;border-radius:14px;background:var(--green-l);color:var(--green-d);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px}
+.card h3{font-size:17px;font-weight:800;color:var(--green-dd);margin-bottom:8px}
+.card p{font-size:13.5px;color:var(--muted)}
+/* flow */
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:8px}
+.flow .step{background:var(--green-ll);border:1px solid var(--line);border-radius:16px;padding:20px 18px;position:relative}
+.flow .n{position:absolute;top:-10px;left:16px;background:var(--green);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.flow h4{font-size:15px;font-weight:800;color:var(--green-dd);margin:6px 0 6px}
+.flow p{font-size:12.5px;color:var(--muted)}
+/* how demo */
+.demo{display:flex;gap:34px;align-items:center}
+.demo-l{flex:1}
+.demo-l h3{font-size:24px;font-weight:900;color:var(--green-dd);margin-bottom:12px}
+.demo-l p{font-size:14.5px;color:var(--muted);margin-bottom:20px}
+.demo-rows{display:flex;flex-direction:column;gap:14px}
+.drow{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.drow .di{flex:none;width:34px;height:34px;border-radius:10px;background:var(--green-l);color:var(--green-d);display:flex;align-items:center;justify-content:center;font-size:16px;margin-top:2px}
+.drow b{font-size:14px;color:var(--green-dd);display:block}
+.drow span{font-size:13px;color:var(--muted)}
+.demo-r{flex:1;display:flex;justify-content:center}
+/* card mock for nutrition */
+.report{width:320px;background:var(--surface);border-radius:20px;border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden}
+.rep-head{background:var(--green);color:#fff;padding:16px 18px}
+.rep-head .t{font-size:13px;opacity:.85}
+.rep-head .cal{font-size:30px;font-weight:900}
+.rep-body{padding:18px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.kpi{background:var(--green-ll);border-radius:12px;padding:12px;text-align:center}
+.kpi b{display:block;font-size:16px;color:var(--green-dd)}
+.kpi span{font-size:11px;color:var(--muted)}
+.bar{margin-bottom:12px}
+.bar .cap{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px}
+.bar .cap b{color:var(--text)}
+.track{height:8px;background:var(--green-ll);border-radius:6px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:6px;background:var(--green)}
+.alert{background:var(--warn-l);color:var(--warn);border-radius:12px;padding:11px 13px;font-size:12.5px;font-weight:600;line-height:1.6}
+/* stack */
+.stack{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.stack .card{display:flex;gap:14px;align-items:flex-start;padding:20px}
+.stack .ic{margin:0;flex:none}
+.stack h3{font-size:15px;margin-bottom:4px}
+.stack p{font-size:12.5px}
+/* timeline / about */
+.about{max-width:760px;margin:0 auto}
+.about p{font-size:14.5px;color:var(--text);margin-bottom:14px}
+.points{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:8px}
+.point{display:flex;gap:10px;align-items:flex-start;font-size:13.5px}
+.point .chk{flex:none;width:22px;height:22px;border-radius:50%;background:var(--green-l);color:var(--green-d);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+/* deploy cards */
+.deploy{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.deploy .card{position:relative}
+.deploy .med{display:inline-block;background:var(--green-l);color:var(--green-d);font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;margin-bottom:12px}
+.deploy .free{background:var(--green);color:#fff}
+/* cta bottom */
+.cta-big{background:linear-gradient(150deg,var(--green-d),var(--green-dd));color:#fff;border-radius:26px;padding:48px 40px;text-align:center;position:relative;overflow:hidden}
+.cta-big h2{font-size:28px;font-weight:900;margin-bottom:10px}
+.cta-big p{opacity:.9;margin-bottom:22px;font-size:15px}
+.cta-big .btn-pri{background:#fff;color:var(--green-d);border-color:#fff}
+.cta-big .btn-sec{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.4)}
+/* footer */
+footer{background:var(--green-dd);color:rgba(255,255,255,.85);padding:34px 0;margin-top:0}
+.foot-in{max-width:1080px;margin:0 auto;padding:0 20px;display:flex;flex-direction:column;gap:8px;text-align:center;font-size:13px}
+.foot-in .frm{font-size:14px;font-weight:700;color:#fff;margin-bottom:4px}
+.reveal{opacity:0;transform:translateY(24px);transition:.6s cubic-bezier(.2,.7,.3,1)}
+.reveal.on{opacity:1;transform:none}
+@media(max-width:900px){
+  h1{font-size:34px}
+  .hero-in{flex-direction:column;gap:40px;padding-top:20px}
+  .hero{padding:110px 0 54px}
+  .phone{width:270px}
+  .phone-scr{height:500px}
+  .grid,.deploy{grid-template-columns:repeat(2,1fr)}
+  .flow{grid-template-columns:repeat(2,1fr)}
+  .stack{grid-template-columns:1fr}
+  .demo{flex-direction:column}
+  .stats-in{grid-template-columns:repeat(2,1fr);gap:18px}
+}
+@media(max-width:600px){
+  .nav-links a{display:none}
+  .nav-links .gh{display:inline-block}
+  h1{font-size:29px}
+  .sub{font-size:15.5px}
+  .grid,.deploy{grid-template-columns:1fr}
+  .points{grid-template-columns:1fr}
+  .sec{padding:54px 0}
+  .sec-h h2{font-size:26px}
+  .cta-big{padding:38px 22px}
+  .cta-big h2{font-size:23px}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-in">
+    <div class="brand"><div class="logo">卡</div><div class="t">卡卡 · AI 饮食管家</div></div>
+    <div class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#flow">工作流</a>
+      <a href="#demo">演示</a>
+      <a href="#stack">技术栈</a>
+      <a href="#deploy">部署</a>
+      <a class="gh" href="https://github.com/525-Helen/HI" target="_blank" rel="noopener">查看源码 ↗</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-in">
+    <div class="hero-l">
+      <div class="badge"><span class="dot"></span> 个人项目作品 · 已上线稳定版</div>
+      <h1>你的私人营养师<br /><span class="hl">卡卡</span> · AI 个性化饮食管理</h1>
+      <p class="sub">拍照或语音说一句吃了什么，即可完成<b>热量打卡、宏量营养分析与健康预警</b>，并围绕你的减脂 / 维持 / 增肌目标给出即时反馈。</p>
+      <p class="meat">基于 LangChain 智能体框架构建，具备多轮对话记忆、用户数据隔离与持久化存储，是一套可独立部署、长期稳定运行的全栈 AI 应用。</p>
+      <div class="cta">
+        <a class="btn btn-pri" href="#demo">查看交互演示</a>
+        <a class="btn btn-sec" href="https://github.com/525-Helen/HI" target="_blank" rel="noopener">GitHub 源码</a>
+      </div>
+      <div class="chips">
+        <span class="chip">🥗 热量打卡</span>
+        <span class="chip">🧮 宏量营养</span>
+        <span class="chip">🎯 目标管理</span>
+        <span class="chip">⚠️ 安全预警</span>
+        <span class="chip">🧠 多轮记忆</span>
+      </div>
+    </div>
+    <div class="hero-r">
+      <div class="phone">
+        <div class="phone-scr">
+          <div class="status"><span>9:41</span><span>●●●</span></div>
+          <div class="ph-head"><div class="ph-avatar">卡</div><div class="ph-name">卡卡 · 营养助手</div></div>
+          <div class="ph-chat">
+            <div class="bub ai">你好呀 👋 我是你的饮食管家「卡卡」。这一餐吃了什么？描述给我，我来为你算热量～</div>
+            <div class="bub usr">午餐：一碗米饭、一份番茄炒蛋、清炒西兰花，还有几块红烧肉。</div>
+            <div class="bub ai">识别到 4 类食物 ✅<br/><b>约 655 千卡</b>｜碳水 78g · 蛋白 24g · 脂肪 26g<br/><span class="w">⚠️ 红烧肉脂肪偏高</span>，建议晚餐清淡一些。已计入今日预算，还差 520 千卡。</div>
+            <div class="bub usr">我有过敏，花生相关要留意。</div>
+            <div class="bub ai">收到 ✅ 已开通<b>过敏安全保护</b>，之后会为你规避含花生食材并给出替代建议。</div>
+          </div>
+          <div class="ph-input"><span>描述一下今天的饮食…</span><div class="send">➤</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stats-in">
+    <div class="stat"><b>4+</b><span>核心能力维度</span></div>
+    <div class="stat"><b>3 类</b><span>健康目标支持</span></div>
+    <div class="stat"><b>多轮</b><span>对话上下文记忆</span></div>
+    <div class="stat"><b>隔离</b><span>多用户数据隔离</span></div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="sec" id="features">
+  <div class="wrap">
+    <div class="sec-h reveal">
+      <div class="tag">CORE FEATURES</div>
+      <h2>不止于记录，更是健康决策助手</h2>
+      <p>把"今天吃得怎么样"变成可量化、可追踪、可预警的数据，而不是模糊的感觉。</p>
+    </div>
+    <div class="grid">
+      <div class="card reveal"><div class="ic">🥗</div><h3>饮食解析与热量打卡</h3><p>将自然语言或图片中的食物识别为结构化明细，逐项计算热量，颗粒度到单个菜品。</p></div>
+      <div class="card reveal"><div class="ic">🧮</div><h3>宏量营养分析</h3><p>输出碳水 / 蛋白质 / 脂肪三大营养素构成，并给出对应的健康建议，帮助你吃得更均衡。</p></div>
+      <div class="card reveal"><div class="ic">🎯</div><h3>目标额度管理</h3><p>支持减脂、维持体重、增肌三类目标，实时呈现"本餐完成度 + 今日剩余额度"。</p></div>
+      <div class="card reveal"><div class="ic">⚠️</div><h3>安全与过敏预警</h3><p>叠加过敏源与高热量食品预警，主动规避风险食材并提供替代建议，守护饮食安全。</p></div>
+      <div class="card reveal"><div class="ic">🧠</div><h3>多轮对话记忆</h3><p>Agent 具备滑动窗口短期记忆，能跨越多次对话记住你的偏好、忌口与历史记录。</p></div>
+      <div class="card reveal"><div class="ic">🛡️</div><h3>用户数据隔离</h3><p>基于独立用户标识进行数据隔离与持久化，不同用户各有一份安全私密的记录空间。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FLOW -->
+<section class="sec sec-alt" id="flow">
+  <div class="wrap">
+    <div class="sec-h reveal">
+      <div class="tag">HOW IT WORKS</div>
+      <h2>一次打卡的智能工作流</h2>
+      <p>从一句"我吃了…"到一份可执行反馈，卡卡在后台完成确定性计算与智能推理。</p>
+    </div>
+    <div class="flow reveal">
+      <div class="step"><div class="n">1</div><h4>输入</h4><p>文本或图片描述一餐食物，支持自然口语表达。</p></div>
+      <div class="step"><div class="n">2</div><h4>识别</h4><p>智能解析为结构化食物明细与用量估计。</p></div>
+      <div class="step"><div class="n">3</div><h4>计算</h4><p>确定性计算本餐热量与三大宏量营养并落库。</p></div>
+      <div class="step"><div class="n">4</div><h4>反馈</h4><p>结合目标额度与安全规则，输出即时健康建议。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- DEMO -->
+<section class="sec" id="demo">
+  <div class="wrap">
+    <div class="demo">
+      <div class="demo-l reveal">
+        <h3>一份即时的营养报告</h3>
+        <p>每次打卡后，卡卡会生成结构化的营养报告：热量、三大营养素、目标完成度，以及需要留意的安全提示。目标额度是确定性的，而非模糊估算。</p>
+        <div class="demo-rows">
+          <div class="drow"><div class="di">🍚</div><div><b>结构化识别</b><span>把口语描述拆解成可量化食物明细</span></div></div>
+          <div class="drow"><div class="di">🎯</div><div><b>目标对账</b><span>对比今日剩余额度，告诉你还能怎么吃</span></div></div>
+          <div class="drow"><div class="di">🛡️</div><div><b>安全守护</b><span>过敏源 / 高热量预警主动拦截</span></div></div>
+        </div>
+      </div>
+      <div class="demo-r reveal">
+        <div class="report">
+          <div class="rep-head"><div class="t">今日饮食 · 卡卡报告</div><div class="cal">1,345 / 1,800 <span style="font-size:13px;opacity:.85">千卡</span></div></div>
+          <div class="rep-body">
+            <div class="kpis">
+              <div class="kpi"><b>78g</b><span>碳水</span></div>
+              <div class="kpi"><b>42g</b><span>蛋白</span></div>
+              <div class="kpi"><b>48g</b><span>脂肪</span></div>
+            </div>
+            <div class="bar"><div class="cap"><span>今日热量</span><b>75%</b></div><div class="track"><i style="width:75%"></i></div></div>
+            <div class="bar"><div class="cap"><span>蛋白质目标</span><b>88%</b></div><div class="track"><i style="width:88%"></i></div></div>
+            <div class="alert">⚠️ 晚餐建议：脂肪摄入已偏高，优先选择蛋白质与膳食纤维来源。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STACK -->
+<section class="sec sec-alt" id="stack">
+  <div class="wrap">
+    <div class="sec-h reveal">
+      <div class="tag">TECH STACK</div>
+      <h2>全栈工程化沉淀</h2>
+      <p>这是一套真实可运行的完整工程，而非单页演示。</p>
+    </div>
+    <div class="stack">
+      <div class="card reveal"><div class="ic">🤖</div><div><h3>LangChain + LangGraph 智能体</h3><p>基于 create_agent 构建对话 Agent，支持工具调用、滑动窗口短期记忆与状态管理。</p></div></div>
+      <div class="card reveal"><div class="ic">🧠</div><div><h3>大语言模型</h3><p>通过 OpenAI 兼容协议接入高性能大语言模型，支持多模态输入与长期稳定推理。</p></div></div>
+      <div class="card reveal"><div class="ic">🗄️</div><div><h3>Supabase (PostgreSQL)</h3><p>云端关系型数据库持久化用户档案、饮食记录与对话数据，天然支持多用户隔离。</p></div></div>
+      <div class="card reveal"><div class="ic">⚡</div><div><h3>FastAPI 服务端</h3><p>提供 /run、/health 等稳定 API 端点，健康检查保障服务持续在线。</p></div></div>
+      <div class="card reveal"><div class="ic">📱</div><div><h3>移动端优先 WebApp</h3><p>响应式单页应用，手机 / 电脑均流畅可用，适配移动端安全区与交互习惯。</p></div></div>
+      <div class="card reveal"><div class="ic">🐳</div><div><h3>Docker 容器化部署</h3><p>一键构建镜像，开机自启 + 健康检查，支持在任何具备 Docker 的主机稳定运行。</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- DEPLOY -->
+<section class="sec" id="deploy">
+  <div class="wrap">
+    <div class="sec-h reveal">
+      <div class="tag">DEPLOYMENT</div>
+      <h2>灵活部署，长期稳定</h2>
+      <p>同一套代码，既能以完整后端稳定运行，也能作为轻量案例页长期在线。</p>
+    </div>
+    <div class="deploy">
+      <div class="card reveal"><span class="med free">FREE · 本页</span><h3>静态案例页</h3><p>本站即为此方案 —— 托管于 GitHub Pages，全球免费、无后端、无密钥，专为作品集与简历长期展示设计。</p></div>
+      <div class="card reveal"><span class="med">CLOUD</span><h3>云端全栈版</h3><p>后端 + 数据库 + 外部 LLM 的完整交互版本，可部署到支持 Docker 的云主机，7×24 稳定对外服务。</p></div>
+      <div class="card reveal"><span class="med">CONTAINER</span><h3>容器一键部署</h3><p>内置 Dockerfile 与部署脚本，一条命令构建启动，含健康检查与开机自启。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="sec" style="padding-bottom:80px">
+  <div class="wrap">
+    <div class="cta-big reveal">
+      <h2>让每一餐都有据可依</h2>
+      <p>把饮食管理从"感觉"变成"数据"，再变成长期坚持的正向反馈。</p>
+      <div class="cta" style="justify-content:center">
+        <a class="btn btn-pri" href="https://github.com/525-Helen/HI" target="_blank" rel="noopener">访问 GitHub 仓库</a>
+        <a class="btn btn-sec" href="https://github.com/525-Helen/HI/issues" target="_blank" rel="noopener">给我提建议</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot-in">
+    <div class="frm">卡卡 · AI 个性化饮食管理 Agent</div>
+    <div>© 2025 · 个人项目作品集 · 本页为静态案例展示，不含任何密钥或敏感配置</div>
+    <div>后端交互完整版见 <a href="https://github.com/525-Helen/HI" target="_blank" rel="noopener" style="color:#a8d0ad">GitHub 仓库</a></div>
+  </div>
+</footer>
+
+<script>
+// 滚动渐显
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('on');io.unobserve(e.target)}})},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+</script>
+</body>
+</html>
