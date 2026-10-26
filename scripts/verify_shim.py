@@ -7,9 +7,9 @@ import sys
 
 # 强制 EXTERNAL_MODE，并把 src_external shim 放最前
 os.environ["EXTERNAL_MODE"] = "1"
-os.environ["EXTERNAL_OPENAI_BASE_URL"] = "https://llmapi.paratera.com/v1"
-os.environ["EXTERNAL_OPENAI_API_KEY"] = "sk-A_lNM2yYTz_K-INk1X0VnQ"
-os.environ["EXTERNAL_OPENAI_MODEL"] = "DeepSeek-V4-Pro-0813"
+os.environ["EXTERNAL_OPENAI_BASE_URL"] = os.environ.get("EXTERNAL_OPENAI_BASE_URL", "https://llmapi.paratera.com/v1")
+os.environ["EXTERNAL_OPENAI_API_KEY"] = os.environ.get("EXTERNAL_OPENAI_API_KEY", "")  # 从环境变量注入，不写死
+os.environ["EXTERNAL_OPENAI_MODEL"] = os.environ.get("EXTERNAL_OPENAI_MODEL", "DeepSeek-V4-Pro-0813")
 os.environ["EXTERNAL_KNOWLEDGE_DISABLED"] = "1"
 
 _here = os.path.dirname(os.path.abspath(__file__))
