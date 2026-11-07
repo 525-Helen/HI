@@ -1,12 +1,15 @@
 #!/bin/bash
 
 set -e
-# 导出环境变量
 
 WORK_DIR="${COZE_WORKSPACE_PATH:-.}"
-# 平台部署将应用监听端口固定为 :80（端口不可在控制台修改）。
-# 因此部署启动脚本默认绑定 80 以匹配平台代理；可用 -p 覆盖。
-PORT="${HTTP_RUN_PORT:-80}"
+
+# 端口优先级（不硬编码 80）：
+#  1) 平台提供 DEPLOY_RUN_PORT（本环境为 5000）
+#  2) 显式环境变量 HTTP_RUN_PORT
+#  3) 兜底 5000（与平台/keep_alive.sh 一致）
+# 说明：系统服务固定占用 9000（_FAAS_RUNTIME_PORT），此处绝不触碰该端口。
+PORT="${DEPLOY_RUN_PORT:-${HTTP_RUN_PORT:-5000}}"
 
 usage() {
   echo "用法: $0 -p <端口>"
@@ -34,22 +37,23 @@ if [ -f "${WORK_DIR}/.venv/bin/activate" ]; then
   source "${WORK_DIR}/.venv/bin/activate"
 fi
 
-# 防端口冲突（自愈 + 防复发）：
-# 启动前清理占用目标端口的【本项目 main.py 残留服务】。
-# 仅对本项目(main.py)的残留进程下手，绝不影响 9000 系统服务等其它进程。
-clean_port() {
+# 单实例守卫：清理占用目标端口的【本项目 main.py 残留服务】后启动，
+# 保证同一时刻只存在一个 Agent HTTP 实例；明确排除 9000 系统服务等其它进程。
+clean_project_on_port() {
   local port="$1" pid cmdline
-  for pid in $(ss -ltnp 2>/dev/null | grep -E ":[0-9]+ " | grep -E ":${port}[^0-9]" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
+  for pid in $(ss -ltnp 2>/dev/null | grep -E ":${port}[^0-9]" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
     cmdline=$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)
     if echo "$cmdline" | grep -q "main.py"; then
-      echo "[http_run] 检测到端口 ${port} 上本项目残留服务 (PID ${pid})，正在清理..."
+      echo "[http_run] 清理端口 ${port} 上本项目残留服务 (PID ${pid})"
       kill -9 "$pid" 2>/dev/null || true
     fi
   done
   sleep 1
 }
 
-clean_port "$PORT"
+clean_project_on_port "$PORT"
 
-echo "[http_run] 启动 Agent HTTP 服务 (port ${PORT})"
-python ${WORK_DIR}/src/main.py -m http -p $PORT
+echo "[http_run] 端口来源: DEPLOY_RUN_PORT=${DEPLOY_RUN_PORT:-未设置}，本次监听端口=${PORT}"
+echo "[http_run] 启动 Agent HTTP 服务 ..."
+# exec 使 uvicorn 成为主进程；启动失败时它会在日志中直接输出实际监听地址/端口与原因(如 [Errno 98] Address already in use)
+exec python ${WORK_DIR}/src/main.py -m http -p "$PORT"

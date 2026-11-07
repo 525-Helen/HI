@@ -687,9 +687,12 @@ def parse_input(input_str: str) -> Dict[str, Any]:
 
 def start_http_server(port):
     workers = 1
-    reload = False
-    if graph_helper.is_dev_env():
-        reload = True
+    # 热重载默认关闭（关键修复）：
+    # reload=True 会让 uvicorn 派生出 reloader+worker 双进程，在自动/重复启动场景下，
+    # 父 reloader 会持续拉起 worker，导致端口被立即回占，新的实例绑定时报
+    # [Errno 98] Address already in use（Agent 无法启动的根因之一）。
+    # 如需本地热更新，显式设置环境变量 UVICORN_RELOAD=1。
+    reload = os.getenv("UVICORN_RELOAD", "0") == "1"
 
     logger.info(f"Start HTTP Server, Port: {port}, Workers: {workers}")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload, workers=workers)
